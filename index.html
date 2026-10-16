@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juegos Interescuelas ENAP - Dashboard Oficial</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Evita que el formulario antiguo del modal aparezca durante la carga de Tailwind/JS. */
+        #admin-modal.hidden,
+        #results-export-modal.hidden { display: none !important; }
+    </style>
+    <link rel="stylesheet" href="css/app.css">
+
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <header class="site-topbar bg-transparent border-b border-slate-700/40 shadow-xl sticky top-0 z-50">
+        <div class="topbar-inner max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="brand-group flex items-center min-w-0">
+                <img src="assets/logo-juegos-interescuelas.png" alt="XXX Juegos Interescuelas 2026" class="brand-logo" />
+                <div class="brand-copy min-w-0">
+                    <h1 class="text-2xl font-black tracking-wider bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">XXX JUEGOS INTERESCUELAS 2026</h1>
+                    <p class="text-xs text-slate-400">Plataforma Oficial de Resultados y Premiación Diaria</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3 header-actions">
+<div class="header-action-buttons flex items-center gap-3">
+                    <button onclick="openResultsExportModal()" class="bg-slate-700/90 hover:bg-slate-600 text-white font-semibold px-4 py-2 rounded-xl text-sm border border-slate-600 transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-file-arrow-down"></i> Auditar resultados
+                    </button>
+                    <button onclick="openModal('admin-modal')" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold px-4 py-2 rounded-xl text-sm shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-pen-to-square"></i> Registrar Resultados / Puntos
+                    </button>
+                </div>
+                <div class="enap-logo-wrap" title="Escuela Naval de Cadetes Almirante Padilla">
+                    <img src="assets/logo-enap.png" alt="Escuela Naval de Cadetes Almirante Padilla" class="enap-logo" />
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+
+        <!-- Schools Quick Cards -->
+        <!-- Orden oficial de visualización: ESMIC, ENAP, EMAVI, ECSAN -->
+        <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-slate-800/90 rounded-2xl p-4 shadow-xl school-esmic flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="text-xs font-bold text-red-400 tracking-wider">EJÉRCITO NACIONAL</span>
+                        <h3 class="text-xl font-extrabold text-white">ESMIC</h3>
+                    </div>
+                    <img src="assets/escudos/escudo-esmic.png" alt="Escudo ESMIC" class="school-crest" />
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex flex-col gap-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Medallero:</span><span id="card-esmic-medals" class="font-bold text-amber-400">🥇0 🥈0 🥉0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Puntaje Total:</span><span id="card-esmic-points" class="font-bold text-red-400">0 pts</span></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800/90 rounded-2xl p-4 shadow-xl school-enap flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="text-xs font-bold text-blue-400 tracking-wider">ARMADA NACIONAL</span>
+                        <h3 class="text-xl font-extrabold text-white">ENAP</h3>
+                    </div>
+                    <img src="assets/escudos/escudo-enap.png" alt="Escudo ENAP" class="school-crest" />
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex flex-col gap-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Medallero:</span><span id="card-enap-medals" class="font-bold text-amber-400">🥇0 🥈0 🥉0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Puntaje Total:</span><span id="card-enap-points" class="font-bold text-blue-400">0 pts</span></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800/90 rounded-2xl p-4 shadow-xl school-emavi flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="text-xs font-bold text-blue-400 tracking-wider">FUERZA AEROESPACIAL COLOMBIANA</span>
+                        <h3 class="text-xl font-extrabold text-white">EMAVI</h3>
+                    </div>
+                    <img src="assets/escudos/escudo-emavi.png" alt="Escudo EMAVI" class="school-crest" />
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex flex-col gap-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Medallero:</span><span id="card-emavi-medals" class="font-bold text-amber-400">🥇0 🥈0 🥉0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Puntaje Total:</span><span id="card-emavi-points" class="font-bold text-blue-400">0 pts</span></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800/90 rounded-2xl p-4 shadow-xl school-ecsan flex flex-col justify-between">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="text-xs font-bold text-green-400 tracking-wider">POLICÍA NACIONAL</span>
+                        <h3 class="text-xl font-extrabold text-white" title="Escuela de Cadetes General Santander">ECSAN</h3>
+                    </div>
+                    <img src="assets/escudos/escudo-ecsan.png" alt="Escudo ECSAN" class="school-crest" />
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex flex-col gap-1 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">Medallero:</span><span id="card-ecsan-medals" class="font-bold text-amber-400">🥇0 🥈0 🥉0</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Puntaje Total:</span><span id="card-ecsan-points" class="font-bold text-green-400">0 pts</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Tabs & Sections -->
+        <div class="tabs-shell bg-transparent rounded-3xl p-6 shadow-2xl border border-slate-700/50">
+            
+            <!-- Navigation Tabs -->
+            <div class="flex flex-wrap gap-2 border-b border-slate-700 pb-4 mb-6">
+                <button onclick="switchTab('podium')" id="tab-podium" class="tab-btn px-5 py-2.5 rounded-xl font-semibold text-sm transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/30">
+                    <i class="fa-solid fa-ranking-star mr-2"></i> Tabla General
+                </button>
+                <button onclick="switchTab('disciplines')" id="tab-disciplines" class="tab-btn px-5 py-2.5 rounded-xl font-semibold text-sm transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                    <i class="fa-solid fa-medal mr-2"></i> Podios por Disciplina
+                </button>
+                <button onclick="switchTab('sportstable')" id="tab-sportstable" class="tab-btn px-5 py-2.5 rounded-xl font-semibold text-sm transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                    <i class="fa-solid fa-table-list mr-2"></i> Tabla por Deporte
+                </button>
+                <button onclick="switchTab('history')" id="tab-history" class="tab-btn px-5 py-2.5 rounded-xl font-semibold text-sm transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                    <i class="fa-solid fa-calendar-days mr-2"></i> Historial Diario
+                </button>
+                <button onclick="switchTab('programacion')" id="tab-programacion" class="tab-btn px-5 py-2.5 rounded-xl font-semibold text-sm transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                    <i class="fa-solid fa-calendar-check mr-2"></i> Programación
+                </button>
+
+            </div>
+
+            <!-- Tab 1: General Medal Tally (Tabla de Premiación) -->
+            <div id="section-podium" class="tab-content space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-white">Tabla General de Premiación y Puntos</h2>
+                                            </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span id="results-count" class="text-xs text-slate-400"></span>
+                        <span id="local-results-count" class="text-xs text-amber-300"></span>
+                        <button type="button" id="clear-local-results-btn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600/15 border border-rose-500/40 text-rose-300 hover:bg-rose-600/25 transition-colors">
+                            <i class="fa-solid fa-trash-can mr-2"></i>Borrar pruebas locales
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto rounded-2xl border border-slate-700">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/80 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="p-4 text-center w-16">Pos</th>
+                                <th class="p-4">Escuela Militar / Policial</th>
+                                <th class="p-4 text-center">🥇 Oro</th>
+                                <th class="p-4 text-center">🥈 Plata</th>
+                                <th class="p-4 text-center">🥉 Bronce</th>
+                                <th class="p-4 text-center font-bold text-white">Puntaje Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="podium-table-body" class="divide-y divide-slate-700/50 text-sm">
+                            <!-- Populated via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- Tab 2: Disciplines Podiums -->
+            <div id="section-disciplines" class="tab-content hidden space-y-6">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Podios y Tabla de Posiciones por Disciplina</h2>
+                    <p class="text-xs text-slate-400">Desglose reglamentario de cada deporte (conjuntos e individuales con nombre de competidor y puntos).</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="disciplines-grid">
+                    <!-- Populated via JavaScript -->
+                </div>
+            </div>
+
+            <!-- Tab 3: Detailed Sport Results Table -->
+            <div id="section-sportstable" class="tab-content hidden space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-white">Tabla Consolidada por Deporte y Evento</h2>
+                        <p class="text-xs text-slate-400">Desglose de resultados y clasificación; en deportes colectivos se muestra la tabla acumulada por categoría.</p>
+                    </div>
+                    <div>
+                        <select id="filter-sport" onchange="renderSportTable()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                            <option value="ALL">Todas las Disciplinas</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto rounded-2xl border border-slate-700">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/80 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="p-4">Fecha</th>
+                                <th class="p-4">Disciplina</th>
+                                <th class="p-4">Modalidad / Categoría</th>
+                                <th class="p-4 text-center text-amber-400">🥇 1er Lugar (Atleta/Ptos)</th>
+                                <th class="p-4 text-center text-slate-300">🥈 2do Lugar (Atleta/Ptos)</th>
+                                <th class="p-4 text-center text-amber-600">🥉 3er Lugar (Atleta/Ptos)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sport-table-body" class="divide-y divide-slate-700/50 text-sm">
+                            <!-- Populated via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+
+            <!-- Tab 5: Programación desde Firestore -->
+            <div id="section-programacion" class="tab-content hidden space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div><h2 class="text-xl font-bold text-white">Programación de Competencias</h2><p class="text-xs text-slate-400">Programación cargada desde la colección Competencias de Firebase.</p></div>
+                    <span id="programacion-count" class="text-xs text-slate-300 bg-slate-900 px-3 py-2 rounded-xl">0 competencias</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <select id="prog-jornada" onchange="renderProgramacion()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"><option value="ALL">Todas las jornadas</option></select>
+                    <select id="prog-disciplina" onchange="renderProgramacion()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"><option value="ALL">Todas las disciplinas</option></select>
+                    <select id="prog-escenario" onchange="renderProgramacion()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"><option value="ALL">Todos los escenarios</option></select>
+                    <select id="prog-estado" onchange="renderProgramacion()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"><option value="ALL">Todos los estados</option><option value="Programada">Programada</option><option value="En curso">En curso</option><option value="Resultados pendientes">Resultados pendientes</option><option value="Finalizada">Finalizada</option><option value="Suspendida">Suspendida</option><option value="Cancelada">Cancelada</option><option value="Aplazada">Aplazada</option></select>
+                </div>
+                <div id="programacion-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                <div class="flex items-center justify-between"><button onclick="changeProgramacionPage(-1)" class="bg-slate-700 hover:bg-slate-600 rounded-xl px-4 py-2 text-sm">Anterior</button><span id="prog-page-info" class="text-xs text-slate-400">Página 1 de 1</span><button onclick="changeProgramacionPage(1)" class="bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-2 text-sm">Siguiente</button></div>
+            </div>
+
+            <!-- Tab 4: Daily History Log -->
+            <div id="section-history" class="tab-content hidden space-y-4">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Registro Diario de Jornadas</h2>
+                    <p class="text-xs text-slate-400">Cronología de los resultados ingresados día a día hasta la clausura de los juegos.</p>
+                </div>
+
+                <div id="history-container" class="space-y-3">
+                    <!-- Populated via JavaScript -->
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Admin Modal for Registering Results -->
+    <div id="admin-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-6 relative max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-medal text-blue-400 text-lg"></i>
+                    <h3 class="text-lg font-bold text-white">Registrar Podio, Puntos y Competidores</h3>
+                </div>
+                <button onclick="closeModal('admin-modal')" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-700">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <form id="result-form" onsubmit="handleSaveResult(event)" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Fecha de la Jornada</label>
+                        <input type="date" id="input-date" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Disciplina Deportiva</label>
+                        <select id="input-discipline" onchange="updateDisciplineFields()" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+                            <option value="Baloncesto">Baloncesto (Conjunto)</option>
+                            <option value="Voleibol">Voleibol (Conjunto)</option>
+                            <option value="Fútbol">Fútbol (Conjunto)</option>
+                            <option value="Esgrima">Esgrima (Individual/Arma)</option>
+                            <option value="Taekwondo">Taekwondo (Peso/Combate)</option>
+                            <option value="Tenis">Tenis (Individual/Dobles)</option>
+                            <option value="Tiro Deportivo">Tiro Deportivo (Arma/Prueba)</option>
+                            <option value="Pentatlón">Pentatlón (Individual/Prueba)</option>
+                            <option value="Orient. Militar">Orient. Militar (Prueba)</option>
+                            <option value="Atletismo">Atletismo (Prueba/Pista-Campo)</option>
+                            <option value="Natacion">Natación (Prueba/Estilo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="dynamic-category-container">
+                    <!-- Rendered dynamically based on sport type -->
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-700/80">
+                    <!-- 1er Lugar -->
+                    <div class="space-y-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-amber-400">🥇 1er Lugar (Oro)</label>
+                        <select id="input-gold-school" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                            <option value="ENAP">ENAP</option>
+                            <option value="EMAVI">EMAVI</option>
+                            <option value="ESMIC">ESMIC</option>
+                            <option value="ECSAN">ECSAN</option>
+                        </select>
+                        <input type="text" id="input-gold-name" placeholder="Atleta / Equipo" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                        <input type="number" id="input-gold-points" value="10" placeholder="Puntos" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                    </div>
+
+                    <!-- 2do Lugar -->
+                    <div class="space-y-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">🥈 2do Lugar (Plata)</label>
+                        <select id="input-silver-school" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                            <option value="ENAP">ENAP</option>
+                            <option value="EMAVI" selected>EMAVI</option>
+                            <option value="ESMIC">ESMIC</option>
+                            <option value="ECSAN">ECSAN</option>
+                        </select>
+                        <input type="text" id="input-silver-name" placeholder="Atleta / Equipo" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                        <input type="number" id="input-silver-points" value="7" placeholder="Puntos" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                    </div>
+
+                    <!-- 3er Lugar -->
+                    <div class="space-y-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-amber-600">🥉 3er Lugar (Bronce)</label>
+                        <select id="input-bronze-school" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                            <option value="ENAP">ENAP</option>
+                            <option value="EMAVI">EMAVI</option>
+                            <option value="ESMIC" selected>ESMIC</option>
+                            <option value="ECSAN">ECSAN</option>
+                        </select>
+                        <input type="text" id="input-bronze-name" placeholder="Atleta / Equipo" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                        <input type="number" id="input-bronze-points" value="5" placeholder="Puntos" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white" />
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t border-slate-700">
+                    <button type="button" onclick="closeModal('admin-modal')" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-300 hover:bg-slate-700">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-2 rounded-xl text-sm shadow-lg shadow-blue-600/30">Guardar Resultado y Puntos</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de descarga de resultados por competencia y jornada -->
+    <div id="results-export-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl max-w-6xl w-full p-6 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-4">
+                <div>
+                    <h3 class="text-xl font-bold text-white"><i class="fa-solid fa-file-arrow-down text-blue-400 mr-2"></i>Descargar auditoría de resultados</h3>
+                    <p class="text-sm text-slate-400 mt-1">Genere reportes PDF por competencia o por jornada. El PDF incluye los logotipos institucionales, marca de agua y la persona que cargó los resultados.</p>
+                </div>
+                <button type="button" onclick="closeModal('results-export-modal')" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+            </div>
+
+            <section class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center"><i class="fa-solid fa-trophy"></i></span>
+                    <div><h4 class="font-bold text-white">Por competencia</h4><p class="text-xs text-slate-400">Descarga el resultado completo de una competencia.</p></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                    <label class="form-field"><span>Competencia</span><select id="export-competition" class="form-control"></select></label>
+                    <button type="button" id="download-competition-results-btn" class="form-btn primary h-fit"><i class="fa-solid fa-download mr-2"></i>Descargar PDF</button>
+                </div>
+                <div id="export-competition-summary" class="form-summary">Seleccione una competencia con resultados registrados.</div>
+                <div id="export-results-preview" class="overflow-x-auto rounded-2xl border border-slate-700"></div>
+            </section>
+
+            <div class="border-t border-slate-700"></div>
+
+            <section class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center"><i class="fa-solid fa-calendar-days"></i></span>
+                    <div><h4 class="font-bold text-white">Por jornada</h4><p class="text-xs text-slate-400">Incluye todas las competencias de la jornada que tengan resultados registrados.</p></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                    <label class="form-field"><span>Jornada</span><select id="export-jornada" class="form-control"></select></label>
+                    <button type="button" id="download-jornada-results-btn" class="form-btn primary h-fit"><i class="fa-solid fa-calendar-days mr-2"></i>Descargar PDF de jornada</button>
+                </div>
+                <div id="export-jornada-summary" class="form-summary">Seleccione una jornada con resultados registrados.</div>
+                <div id="export-jornada-preview" class="overflow-x-auto rounded-2xl border border-slate-700"></div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Custom Notification Toast / Modal -->
+    <div id="msg-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
+            <div id="msg-icon" class="w-12 h-12 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-circle-info"></i>
+            </div>
+            <h4 id="msg-title" class="text-lg font-bold text-white">Notificación</h4>
+            <p id="msg-text" class="text-sm text-slate-300">Mensaje informativo de los juegos.</p>
+            <button onclick="closeModal('msg-modal')" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-xl text-sm">Entendido</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/resultados-form.js"></script>
+
+</body>
+</html>

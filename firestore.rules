@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function esAdministrador() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/Administradores/$(request.auth.uid))
+        && get(/databases/$(database)/documents/Administradores/$(request.auth.uid)).data.activo == true;
+    }
+
+    // Catálogos y programación: lectura pública; escritura únicamente administrativa.
+    match /Escuelas/{docId} {
+      allow read: if true;
+      allow write: if esAdministrador();
+    }
+
+    match /Disciplinas/{docId} {
+      allow read: if true;
+      allow write: if esAdministrador();
+    }
+
+    match /Categorias/{docId} {
+      allow read: if true;
+      allow write: if esAdministrador();
+    }
+
+    match /Competencias/{docId} {
+      allow read: if true;
+      allow write: if esAdministrador();
+    }
+
+    match /Resultados/{docId} {
+      allow read: if true;
+      allow create, update, delete: if esAdministrador();
+    }
+
+    // Ruta utilizada por la dashboard actual para resultados históricos.
+    match /artifacts/{appId}/public/data/match_results_v3/{docId} {
+      allow read: if true;
+      allow create, update, delete: if esAdministrador();
+    }
+
+    // El documento del administrador debe crearse desde la consola de Firebase
+    // o mediante un entorno administrativo seguro, nunca desde la dashboard.
+    match /Administradores/{uid} {
+      allow read: if autenticado() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

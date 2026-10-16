@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pruebas Firestore — JIN ENAP</title>
+  <link rel="stylesheet" href="css/app.css" />
+  <style>
+    body{padding:2rem;background:#0f172a;color:#e2e8f0;font-family:Inter,Arial,sans-serif}
+    .panel{max-width:900px;margin:auto;background:#1e293b;border:1px solid #334155;border-radius:18px;padding:24px}
+    button{background:#2563eb;color:white;border:0;border-radius:10px;padding:12px 16px;cursor:pointer;margin:5px}
+    pre{background:#020617;padding:16px;border-radius:12px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>Pruebas de seguridad Firestore</h1>
+    <p>Esta página utiliza la configuración existente de la dashboard y realiza operaciones controladas sobre documentos de prueba.</p>
+    <button id="readBtn">Probar lectura de Competencias</button>
+    <button id="writeBtn">Probar escritura no autorizada</button>
+    <button id="legacyBtn">Probar lectura match_results_v3</button>
+    <pre id="output">Inicializando Firebase…</pre>
+  </main>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { getFirestore, collection, getDocs, doc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { firebaseConfig, appId } from './js/firebase-config.js';
+
+    const output = document.getElementById('output');
+    const log = (message, data = '') => { output.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${data ? JSON.stringify(data, null, 2) : ''}`; };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    await signInAnonymously(auth);
+    log(`Autenticación anónima activa. UID: ${auth.currentUser?.uid || 'sin UID'}`);
+
+    document.getElementById('readBtn').onclick = async () => {
+      try { const snap = await getDocs(collection(db, 'Competencias')); log(`Lectura permitida: ${snap.size} documentos.`); }
+      catch (error) { log('Lectura denegada o fallida.', {code:error.code, message:error.message}); }
+    };
+    document.getElementById('legacyBtn').onclick = async () => {
+      try { const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'match_results_v3')); log(`Lectura legacy permitida: ${snap.size} documentos.`); }
+      catch (error) { log('Lectura legacy denegada o fallida.', {code:error.code, message:error.message}); }
+    };
+    document.getElementById('writeBtn').onclick = async () => {
+      try {
+        await setDoc(doc(db, 'Resultados', `PRUEBA_NO_AUTORIZADA_${Date.now()}`), {prueba:true, origen:'pruebas-firestore.html'});
+        log('ADVERTENCIA: la escritura fue permitida. Revise las reglas.');
+      } catch (error) { log('Resultado esperado: escritura denegada.', {code:error.code, message:error.message}); }
+    };
+  </script>
+</body>
+</html>

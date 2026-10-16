@@ -1,0 +1,210 @@
+body { font-family: 'Inter', sans-serif; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        .school-enap { border-left: 6px solid #2563eb; } /* ENAP: azul que tenía EMAVI */
+        .school-emavi { border-left: 6px solid #1e3a8a; } /* EMAVI: azul que tenía ENAP */
+        .school-esmic { border-left: 6px solid #dc2626; } /* ESMIC: rojo que tenía ECSAN */
+        .school-ecsan { border-left: 6px solid #16a34a; } /* ECSAN: verde que tenía ESMIC */
+
+
+/* Identidad visual institucional */
+.brand-logo {
+    width: 116px;
+    height: 132px;
+    object-fit: contain;
+    object-position: center;
+    flex: 0 0 auto;
+}
+
+.header-actions {
+    align-items: center;
+}
+
+.enap-logo-wrap {
+    width: 82px;
+    height: 104px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid rgba(148, 163, 184, 0.35);
+    padding-left: 14px;
+    flex: 0 0 auto;
+}
+
+.enap-logo {
+    width: 76px;
+    height: 100px;
+    object-fit: contain;
+}
+
+@media (max-width: 768px) {
+    .brand-logo {
+        width: 78px;
+        height: 96px;
+    }
+
+    .enap-logo-wrap {
+        width: 64px;
+        height: 82px;
+        padding-left: 8px;
+    }
+
+    .enap-logo {
+        width: 58px;
+        height: 78px;
+    }
+}
+
+
+/* Escudos institucionales en las tarjetas generales */
+.school-crest {
+    width: 58px;
+    height: 68px;
+    object-fit: contain;
+    object-position: center;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.25));
+}
+
+/* Marca de agua institucional: no interfiere con los controles */
+body {
+    position: relative;
+    isolation: isolate;
+    background-color: #0f172a;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: url('../assets/escudos/marca-agua-enap.png');
+    background-repeat: no-repeat;
+    background-position: center 58%;
+    background-size: min(52vw, 680px);
+    opacity: 0.055;
+    pointer-events: none;
+    z-index: -1;
+}
+
+@media (max-width: 768px) {
+    .school-crest {
+        width: 46px;
+        height: 54px;
+    }
+
+    body::before {
+        background-size: min(85vw, 520px);
+        background-position: center 45%;
+    }
+}
+
+
+/* Transparencia institucional: barra superior y contenedor de pestañas */
+.site-topbar {
+    background: rgba(15, 23, 42, 0.58) !important;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+.tabs-shell {
+    background: rgba(15, 23, 42, 0.28) !important;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+.tabs-shell > .border-b {
+    border-bottom-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+@media (max-width: 768px) {
+    .site-topbar {
+        background: rgba(15, 23, 42, 0.78) !important;
+    }
+
+    .tabs-shell {
+        background: rgba(15, 23, 42, 0.42) !important;
+    }
+}
+
+
+/* Formulario digital de resultados por disciplina */
+.form-section{background:rgba(15,23,42,.65);border:1px solid rgba(100,116,139,.35);border-radius:18px;padding:18px}.form-section h4{font-weight:800;color:#e2e8f0;margin-bottom:14px}.form-grid{display:grid;gap:14px}.form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.form-field{display:flex;flex-direction:column;gap:7px;color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.form-field.wide{grid-column:1/-1}.form-control{width:100%;min-width:0;background:#0f172a;border:1px solid #334155;border-radius:11px;color:#e2e8f0;padding:10px 12px;font-size:13px;text-transform:none;letter-spacing:normal}.form-control:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.15)}.form-summary{margin-top:12px;padding:12px;border-radius:12px;background:rgba(30,64,175,.16);border:1px solid rgba(59,130,246,.25);color:#bfdbfe;font-size:13px}.form-btn{border-radius:11px;padding:10px 16px;font-size:13px;font-weight:800}.form-btn.primary{background:#2563eb;color:white}.form-btn.secondary{background:#1e293b;color:#cbd5e1;border:1px solid #475569}.result-table-wrap{overflow-x:auto;border:1px solid #334155;border-radius:12px}.result-entry-table{width:100%;min-width:820px;border-collapse:collapse}.result-entry-table th{padding:11px;text-align:left;background:#0f172a;color:#94a3b8;font-size:11px;text-transform:uppercase}.result-entry-table td{padding:8px;border-top:1px solid rgba(51,65,85,.65)}.result-entry-table .form-control{padding:8px;font-size:12px}
+@media(max-width:640px){.form-grid.two{grid-template-columns:1fr}.form-field.wide{grid-column:auto}}
+
+
+/* v18 - Ajuste visual de barra superior para producción/pruebas */
+.site-topbar .topbar-inner {
+    width: 100%;
+    max-width: 1480px !important;
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+    padding-top: 14px !important;
+    padding-bottom: 14px !important;
+    gap: 28px !important;
+}
+.brand-group {
+    gap: 18px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.brand-copy {
+    min-width: 360px;
+}
+.brand-copy h1 {
+    font-size: 24px;
+    line-height: 1.15;
+    white-space: nowrap;
+    letter-spacing: .045em;
+}
+.brand-copy p {
+    margin-top: 7px;
+}
+.header-actions {
+    gap: 18px !important;
+    flex: 0 0 auto;
+}
+.header-action-buttons {
+    gap: 12px !important;
+}
+.header-action-buttons button {
+    min-height: 54px;
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+    white-space: nowrap;
+}
+.header-action-buttons button:first-child {
+    min-width: 190px;
+}
+.header-action-buttons button:last-child {
+    min-width: 235px;
+}
+.enap-logo-wrap {
+    margin-left: 2px;
+    padding-left: 18px;
+}
+@media (max-width: 1200px) {
+    .site-topbar .topbar-inner { max-width: 100% !important; padding-left: 20px !important; padding-right: 20px !important; gap: 18px !important; }
+    .brand-copy { min-width: 300px; }
+    .brand-copy h1 { font-size: 21px; }
+    .header-action-buttons button:first-child { min-width: 165px; }
+    .header-action-buttons button:last-child { min-width: 205px; }
+}
+@media (max-width: 900px) {
+    .site-topbar .topbar-inner { align-items: stretch !important; }
+    .brand-group { justify-content: center; }
+    .header-actions { justify-content: center; flex-wrap: wrap; }
+    .brand-copy h1 { white-space: normal; }
+}
+@media (max-width: 640px) {
+    .site-topbar .topbar-inner { padding: 10px 14px !important; gap: 10px !important; }
+    .brand-group { gap: 10px; }
+    .brand-copy { min-width: 0; }
+    .brand-copy h1 { font-size: 17px; letter-spacing: .02em; }
+    .brand-copy p { font-size: 10px; margin-top: 4px; }
+    .header-actions { gap: 8px !important; }
+    .header-action-buttons { width: 100%; }
+    .header-action-buttons button { min-width: 0 !important; flex: 1 1 0; min-height: 46px; padding: 9px 10px !important; font-size: 12px !important; }
+    .enap-logo-wrap { width: 58px; height: 72px; padding-left: 7px; }
+    .enap-logo { width: 52px; height: 68px; }
+}

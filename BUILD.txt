@@ -1,0 +1,22 @@
+JIE26 - Fase 7 v18 - PRUEBAS ESTADOS COLECTIVOS - FIX FILTRO DISCIPLINA + BRONCE TERCER PUESTO + FIX FILTRO PROGRAMACION
+Base: V18 PRUEBAS Ajuste Visual Final CORREGIDA
+Cambio: selector de fase para Fútbol, Baloncesto y Voleibol; estado visible de competencia en definición.
+Uso: pruebas locales primero. No desplegar como producción.
+
+Ajuste: filtro de disciplina prioriza código numérico corregido; botón "Auditar resultados"; título del modal "Descargar auditoría de resultados".
+
+Fix: evita el destello del formulario antiguo durante la carga inicial mediante CSS crítico para #admin-modal.hidden.
+
+Ajuste de estado de fútbol: opciones claras para partido finalizado, competencia finalizada, descalificación local/visitante y competencia suspendida.
+
+Estado común por tipo para todas las disciplinas: colectivas e individuales.
+
+Descalificación individual: captura obligatoria de nombre completo y escuela del participante.
+
+Ajuste topbar: título actualizado a XXX JUEGOS INTERESCUELAS 2026.
+
+Ajuste tarjeta EMAVI: FUERZA AEROESPACIAL COLOMBIANA.
+
+Ajuste tabla general: EMAVI — Fuerza Aeroespacial Colombiana.
+
+Modelo puntuación general: oro 10, plata 7, bronce 5; separado de puntos de clasificación deportiva y resultados técnicos.
