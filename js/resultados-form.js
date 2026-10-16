@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, getDocs, addDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, collection, getDocs, addDoc, updateDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { competenciasFallback } from "./competencias-fallback.js";
 
@@ -44,6 +44,11 @@ let auth = null;
 let competencias = [];
 let selectedCompetition = null;
 let currentAdminProfile = { nombre: "", uid: "" };
+let editingResultId = null;
+let editingResultSource = null;
+let editingResultData = null;
+let firebaseResultsCache = [];
+let resultCacheLoaded = false;
 
 function input(id, placeholder='', type='text', required=false, extra='') {
   return `<input id="${id}" type="${type}" placeholder="${placeholder}" ${required?'required':''} class="form-control" ${extra}>`;
@@ -53,10 +58,21 @@ function select(id, options, required=false, extra='') {
 }
 function field(label, html, cls='') { return `<label class="form-field ${cls}"><span>${label}</span>${html}</label>`; }
 function shell(content) {
-  const box = $('admin-modal')?.querySelector('.bg-slate-800');
-  if (!box) return;
+  const modal = $('admin-modal');
+  if (!modal) {
+    console.error('No se encontró el contenedor #admin-modal.');
+    return;
+  }
+  // El modal de producción/pruebas se deja vacío en el HTML para evitar
+  // que aparezca el formulario antiguo. Crear aquí el panel dinámico.
+  let box = modal.querySelector('.bg-slate-800');
+  if (!box) {
+    box = document.createElement('div');
+    modal.appendChild(box);
+  }
   box.className = 'bg-slate-800 border border-slate-700 rounded-3xl max-w-7xl w-full p-6 shadow-2xl space-y-5 relative max-h-[94vh] overflow-y-auto';
   box.innerHTML = content;
+  modal.setAttribute('aria-hidden', 'false');
 }
 
 function renderAdminLogin(errorMessage='') {
@@ -143,7 +159,7 @@ function renderBaseForm() {
       <div><h3 class="text-xl font-bold text-white"><i class="fa-solid fa-clipboard-list text-blue-400 mr-2"></i>Registrar resultado JIE26</h3>
       <p class="text-sm text-slate-400 mt-1">Seleccione una competencia ya programada. La Dashboard carga automáticamente su disciplina, categoría, jornada, fecha y escenario.</p>
       <div id="admin-session-badge" class="text-xs text-emerald-300 mt-2"></div></div>
-      <div class="flex items-center gap-2"><button type="button" id="logout-admin" class="text-xs text-slate-300 hover:text-white border border-slate-600 rounded-lg px-3 py-2">Cerrar sesión</button><button type="button" id="close-digital-form" class="text-slate-400 hover:text-white text-2xl">&times;</button></div>
+      <div class="flex items-center gap-2"><button type="button" id="manage-saved-results" class="text-xs text-blue-200 hover:text-white border border-blue-700 rounded-lg px-3 py-2">Editar registrados</button><button type="button" id="logout-admin" class="text-xs text-slate-300 hover:text-white border border-slate-600 rounded-lg px-3 py-2">Cerrar sesión</button><button type="button" id="close-digital-form" class="text-slate-400 hover:text-white text-2xl">&times;</button></div>
     </div>
 
     <form id="digital-result-form" class="space-y-5">
@@ -184,13 +200,16 @@ function renderBaseForm() {
     </form>`);
 
   $('close-digital-form').onclick = () => window.closeModal('admin-modal');
-  $('cancel-digital-form').onclick = () => window.closeModal('admin-modal');
+  $('manage-saved-results').onclick = renderSavedResultsManager;
+  $('local-test-mode').addEventListener('change', async () => { await loadExistingResults(); refreshCompetitionOptionsByJornada(); });
+  $('cancel-digital-form').onclick = () => { editingResultId=null; editingResultSource=null; editingResultData=null; window.closeModal('admin-modal'); };
   $('logout-admin').onclick = async () => { try { if(auth) await signOut(auth); } finally { renderAdminLogin(); } };
   $('digital-discipline').addEventListener('change', refreshCompetitions);
   $('digital-jornada-select').addEventListener('change', refreshCompetitionOptionsByJornada);
   $('digital-competition').addEventListener('change', loadCompetitionDetails);
   $('collective-phase')?.addEventListener('change', updateCollectivePhaseNotice);
   $('digital-result-form').addEventListener('submit', saveResult);
+  $('digital-result-form').querySelector('button[type=submit]').innerHTML = editingResultId ? '<i class="fa-solid fa-floppy-disk mr-2"></i>Guardar corrección' : '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Guardar en Resultados';
 }
 
 function updateCollectivePhaseVisibility(discipline) {
@@ -223,7 +242,8 @@ function jornadaValue(c) {
 
 function refreshCompetitions() {
   const discipline = $('digital-discipline').value;
-  const list = competencias.filter(c => disciplineName(c) === discipline);
+  const saved = getCurrentResults();
+  const list = competencias.filter(c => disciplineName(c) === discipline && (!isCompetitionSaved(c, saved) || (editingResultData && sameCompetition(c, editingResultData))));
   const jornadas = [...new Set(list.map(jornadaValue).filter(Boolean))]
     .sort((a,b) => a.localeCompare(b,'es',{numeric:true,sensitivity:'base'}));
   const jornadaSelect = $('digital-jornada-select');
@@ -249,7 +269,8 @@ function refreshCompetitions() {
 function refreshCompetitionOptionsByJornada() {
   const discipline = $('digital-discipline').value;
   const selectedJornada = $('digital-jornada-select').value;
-  const list = competencias.filter(c => disciplineName(c) === discipline && (
+  const saved = getCurrentResults();
+  const list = competencias.filter(c => disciplineName(c) === discipline && (!isCompetitionSaved(c, saved) || (editingResultData && sameCompetition(c, editingResultData))) && (
     selectedJornada === '__SIN_JORNADA__' ? !jornadaValue(c) : selectedJornada && jornadaValue(c) === selectedJornada
   ));
   $('digital-competition').innerHTML = '<option value="">Seleccione una competencia</option>' +
@@ -326,6 +347,35 @@ function renderDisciplineForm(d) {
     : '<option value="COMPETENCIA_FINALIZADA">Competencia finalizada</option><option value="DQ_PARTICIPANTE">Descalificación del participante</option><option value="SUSPENDIDO">Competencia suspendida</option>';
   const statusControl = `<div class="form-grid one mb-3" id="shared-competition-status">${field(isCollective ? 'Estado del encuentro / competencia' : 'Estado de la competencia',select('competition-status',statusOptions,true),'wide')}<div id="dq-participant-fields" class="form-grid two wide hidden">${field('Nombre completo del participante descalificado',input('dq-participant-name','Nombres y apellidos','text',true))}${field('Escuela del participante descalificado',select('dq-participant-school','<option value="">Seleccione escuela</option>'+optionSchools,true))}<p class="text-xs text-amber-200 mt-1 wide">Diligencie estos datos cuando el estado sea “Descalificación del participante”.</p></div><p class="text-xs text-slate-400 mt-1">${isCollective ? 'El estado del encuentro no implica que la medallería esté definida. La fase seleccionada determina cuándo corresponde premiar.' : 'La competencia individual solo debe finalizarse cuando el resultado oficial esté confirmado.'}</p></div>`;
   container.innerHTML = statusControl + html;
+  if (d === 'Taekwondo') {
+    const list = $('tk-bouts-list');
+    const syncWeight = card => {
+      const sex = card.querySelector('[id$="-sex"]')?.value || 'Masculino';
+      const weight = card.querySelector('[id$="-weight"]');
+      if (!weight) return;
+      const previous = weight.value;
+      weight.innerHTML = taekwondoWeightOptions(sex);
+      if ([...weight.options].some(o=>o.value===previous)) weight.value = previous;
+    };
+    list?.addEventListener('change', ev => {
+      const card = ev.target.closest('.tk-bout-card');
+      if (card && ev.target.id.endsWith('-sex')) syncWeight(card);
+    });
+    list?.addEventListener('click', ev => {
+      const remove = ev.target.closest('.tk-remove-bout');
+      if (remove) {
+        const cards = [...list.querySelectorAll('.tk-bout-card')];
+        if (cards.length > 1) { remove.closest('.tk-bout-card').remove(); [...list.querySelectorAll('.tk-bout-card')].forEach((c,i)=>{const oldIndex=c.dataset.boutIndex;c.dataset.boutIndex=i;c.querySelector('h5').textContent=`Combate ${i+1}`;c.querySelectorAll('[id]').forEach(el=>{el.id=el.id.replace(new RegExp('^tk-'+oldIndex+'-'),'tk-'+i+'-');});}); }
+      }
+    });
+    $('tk-add-bout')?.addEventListener('click', () => {
+      const cards = [...list.querySelectorAll('.tk-bout-card')];
+      const next = cards.length;
+      list.insertAdjacentHTML('beforeend', taekwondoBoutCard(next));
+      const card = list.lastElementChild;
+      const remove = card.querySelector('.tk-remove-bout'); if (remove) remove.disabled = false;
+    });
+  }
   const stateSelect = $('competition-status');
   const dqFields = $('dq-participant-fields');
   const syncDQFields = () => {
@@ -400,12 +450,33 @@ function renderFencing() {
     <div class="form-summary"><strong>Podio automático:</strong> Oro = ganador de la final; Plata = perdedor de la final; Bronce = ganador del tercer puesto.</div>
   </div>`;
 }
+function taekwondoWeightOptions(sex, selected='') {
+  const male = ['Hasta 54 kg','Más de 54 y hasta 58 kg','Más de 58 y hasta 63 kg','Más de 63 y hasta 68 kg','Más de 68 y hasta 74 kg','Más de 74 y hasta 80 kg','Más de 80 y hasta 87 kg','Más de 87 kg'];
+  const female = ['Hasta 46 kg','Más de 46 y hasta 49 kg','Más de 49 y hasta 53 kg','Más de 53 y hasta 57 kg','Más de 57 y hasta 62 kg','Más de 62 y hasta 67 kg','Más de 67 y hasta 73 kg','Más de 73 kg'];
+  const list = sex === 'Femenino' ? female : male;
+  return '<option value="">Seleccione peso</option>' + list.map(x=>`<option ${x===selected?'selected':''}>${x}</option>`).join('') + '<option value="OTRA">Otra categoría (definida por organización)</option>';
+}
+function taekwondoBoutCard(i) {
+  const p=`tk-${i}`;
+  return `<article class="form-section tk-bout-card" data-bout-index="${i}">
+    <div class="flex items-center justify-between gap-3 mb-3"><h5 class="font-bold text-white">Combate ${i+1}</h5><button type="button" class="form-btn secondary tk-remove-bout" ${i===0?'disabled':''}>Eliminar combate</button></div>
+    <div class="form-grid two">
+      ${field('Sexo / rama',select(`${p}-sex`,'<option value="Masculino">Masculino</option><option value="Femenino">Femenino</option>',true))}
+      ${field('Categoría de peso (referencia WT)',select(`${p}-weight`,taekwondoWeightOptions('Masculino'),true))}
+      ${field('Competidor A',input(`${p}-a-name`,'Nombre completo','text',true))}${field('Escuela A',select(`${p}-a-school`,optionSchools,true))}
+      ${field('Competidor B',input(`${p}-b-name`,'Nombre completo','text',true))}${field('Escuela B',select(`${p}-b-school`,optionSchools,true))}
+      ${[1,2,3].map(r=>`${field(`Round ${r} · puntos A`,input(`${p}-${r}-a`,'0','number',false,'min="0"'))}${field(`Round ${r} · puntos B`,input(`${p}-${r}-b`,'0','number',false,'min="0"'))}${field(`Round ${r} · Gam-jeom A`,input(`${p}-${r}-ga`,'0','number',false,'min="0"'))}${field(`Round ${r} · Gam-jeom B`,input(`${p}-${r}-gb`,'0','number',false,'min="0"'))}`).join('')}
+      ${field('Resultado oficial',input(`${p}-final`,'Ej. 2-1 o 18-12'))}${field('Ganador',select(`${p}-winner`,'<option value="">Seleccione</option><option value="A">Competidor A</option><option value="B">Competidor B</option><option value="EMPATE">Empate / pendiente de decisión</option>',true))}
+      ${field('Forma de finalización',select(`${p}-end`,'<option>PTS</option><option>PTF</option><option>RSC</option><option>WDR</option><option>DSQ</option><option>DQB</option><option>OTRA</option>'))}
+      ${field('Observaciones del combate',`<textarea id="${p}-notes" class="form-control" rows="2" placeholder="Retiro, sanciones, revisión arbitral..."></textarea>`,'wide')}
+    </div>
+  </article>`;
+}
 function renderTaekwondo() {
-  return `<div class="form-grid two">${field('Competidor A',input('t-a-name','Nombre','text',true))}${field('Escuela A',select('t-a-school',optionSchools,true))}${field('Competidor B',input('t-b-name','Nombre','text',true))}${field('Escuela B',select('t-b-school',optionSchools,true))}
-    ${field('Sexo',select('t-sex','<option>Masculino</option><option>Femenino</option>',true))}${field('Categoría de peso',input('t-weight','Ej. -68 kg','text',true))}
-    ${[1,2,3].map(r=>`${field(`Round ${r} - puntos A`,input(`t-${r}-a`,'0','number',false,'min="0"'))}${field(`Round ${r} - puntos B`,input(`t-${r}-b`,'0','number',false,'min="0"'))}${field(`Round ${r} - Gam-Jeom A`,input(`t-${r}-ga`,'0','number',false,'min="0"'))}${field(`Round ${r} - Gam-Jeom B`,input(`t-${r}-gb`,'0','number',false,'min="0"'))}`).join('')}
-    ${field('Resultado final',input('t-final','Ej. 2-1'))}${field('Ganador',select('t-winner','<option value="">Seleccione</option><option>A</option><option>B</option>',true))}
-    ${field('Forma de finalización',select('t-end','<option>PTS</option><option>PTF</option><option>RSC</option><option>WDR</option><option>DSQ</option><option>DQB</option>'))}</div>`;
+  return `<div class="space-y-4"><div class="form-summary">Registre varios combates de una misma sesión/competencia. Cada combate conserva rama, peso, deportistas, escuelas, marcador por round y ganador. Las categorías de peso mostradas son una referencia de combate senior de World Taekwondo; confirme con la organización si los Juegos usan categorías por edad o pesos adaptados.</div>
+    <div id="tk-bouts-list" class="space-y-4">${taekwondoBoutCard(0)}</div>
+    <div class="flex flex-wrap gap-3"><button type="button" id="tk-add-bout" class="form-btn secondary">+ Agregar otro combate</button><span class="text-xs text-slate-400 self-center">Puede registrar combates de distintos pesos en una sola jornada de Taekwondo.</span></div>
+  </div>`;
 }
 function renderTennis() {
   return `<div class="form-grid two">${field('Modalidad',select('ten-mode','<option>Sencillos</option><option>Dobles</option><option>Dobles mixtos</option>',true))}
@@ -480,7 +551,8 @@ function renderAthletics() {
 }
 function renderSwimming() {
   return `<div class="form-grid two">${field('Prueba',select('sw-event','<option>50 m</option><option>100 m</option><option>200 m</option><option>400 m</option><option>800 m</option><option>1500 m</option><option>Relevos</option>',true))}${field('Estilo',select('sw-style','<option>Libre</option><option>Espalda</option><option>Pecho</option><option>Mariposa</option><option>Combinado</option>',true))}${field('Fase',select('sw-phase','<option>FINAL</option><option>ELIMINATORIA</option><option>SEMIFINAL</option>'))}</div>
-    ${tableWrap(['#','Carril','Licencia','Nombre','Escuela','Sexo','Entrada','Parcial 1','Parcial 2','Parcial 3','Tiempo final','Pos.','Estado'],[1,2,3,4,5,6,7,8,9,10].map(i=>`<tr><td>${i}</td><td><input id="sw-${i}-lane" class="form-control"></td><td><input id="sw-${i}-lic" class="form-control"></td><td><input id="sw-${i}-name" class="form-control"></td><td><select id="sw-${i}-school" class="form-control">${optionSchools}</select></td><td><select id="sw-${i}-sex" class="form-control"><option>Masculino</option><option>Femenino</option></select></td><td><input id="sw-${i}-entry" class="form-control"></td><td><input id="sw-${i}-s1" class="form-control"></td><td><input id="sw-${i}-s2" class="form-control"></td><td><input id="sw-${i}-s3" class="form-control"></td><td><input id="sw-${i}-final" class="form-control"></td><td><input id="sw-${i}-pos" class="form-control" type="number"></td><td><select id="sw-${i}-status" class="form-control"><option>FINAL</option><option>DQ</option><option>DNF</option><option>DNS</option></select></td></tr>`).join(''))}`;
+    <div class="form-summary mb-3">Registro de Natación: se ingresará un único tiempo por participante en el campo <strong>Tiempo final</strong>. Los parciales y el tiempo de entrada no se utilizan en esta planilla.</div>
+    ${tableWrap(['#','Carril','Licencia','Nombre','Escuela','Sexo','Tiempo final','Pos.','Estado'],[1,2,3,4,5,6,7,8,9,10].map(i=>`<tr><td>${i}</td><td><input id="sw-${i}-lane" class="form-control"></td><td><input id="sw-${i}-lic" class="form-control"></td><td><input id="sw-${i}-name" class="form-control"></td><td><select id="sw-${i}-school" class="form-control">${optionSchools}</select></td><td><select id="sw-${i}-sex" class="form-control"><option>Masculino</option><option>Femenino</option></select></td><td><input id="sw-${i}-final" class="form-control" placeholder="mm:ss.mmm"></td><td><input id="sw-${i}-pos" class="form-control" type="number" min="1"></td><td><select id="sw-${i}-status" class="form-control"><option>FINAL</option><option>DQ</option><option>DNF</option><option>DNS</option></select></td></tr>`).join(''))}`;
 }
 
 function bindDynamicCalculations(d) {
@@ -548,7 +620,13 @@ function buildResultData(d) {
     const bout=(prefix)=>({participanteA:val(`${prefix}-a`),participanteB:val(`${prefix}-b`),periodos:[1,2,3].map(p=>({periodo:p,toquesA:num(`${prefix}-${p}-a`),toquesB:num(`${prefix}-${p}-b`)})),sanciones:{A:val(`${prefix}-san-a`),B:val(`${prefix}-san-b`)},ganador:val(`${prefix}-winner`)});
     return {tipo:'ESGRIMA_ELIMINACION_DIRECTA',formato:'4_PARTICIPANTES',arma:val('e-weapon'),participantes,cuadro:{semifinal1:bout('e-sf1'),semifinal2:bout('e-sf2'),final:bout('e-final'),tercerPuesto:bout('e-third')}};
   }
-  if (d === 'Taekwondo') return { tipo:'TAEKWONDO', competidorA:{nombre:val('t-a-name'),escuelaCodigo:val('t-a-school')}, competidorB:{nombre:val('t-b-name'),escuelaCodigo:val('t-b-school')}, sexo:val('t-sex'), categoriaPeso:val('t-weight'), rounds:[1,2,3].map(r=>({round:r,puntosA:num(`t-${r}-a`),puntosB:num(`t-${r}-b`),gamJeomA:num(`t-${r}-ga`),gamJeomB:num(`t-${r}-gb`)})), resultadoFinal:val('t-final'), ganador:val('t-winner'), formaFinalizacion:val('t-end') };
+  if (d === 'Taekwondo') {
+    const combates = [...document.querySelectorAll('#tk-bouts-list .tk-bout-card')].map((card,idx)=>{
+      const p=`tk-${idx}`;
+      return { numero:idx+1, sexo:val(`${p}-sex`), categoriaPeso:val(`${p}-weight`), competidorA:{nombre:val(`${p}-a-name`).trim(),escuelaCodigo:val(`${p}-a-school`)}, competidorB:{nombre:val(`${p}-b-name`).trim(),escuelaCodigo:val(`${p}-b-school`)}, rounds:[1,2,3].map(r=>({round:r,puntosA:num(`${p}-${r}-a`),puntosB:num(`${p}-${r}-b`),gamJeomA:num(`${p}-${r}-ga`),gamJeomB:num(`${p}-${r}-gb`)})), resultadoFinal:val(`${p}-final`), ganador:val(`${p}-winner`), formaFinalizacion:val(`${p}-end`), observaciones:val(`${p}-notes`) };
+    });
+    return { tipo:'TAEKWONDO', formatoRegistro:'MULTIPLES_COMBATES', totalCombates:combates.length, combates, reglaPeso:'REFERENCIA_WORLD_TAEKWONDO_SENIOR_PENDIENTE_VALIDACION_JIE26' };
+  }
   if (d === 'Tenis') return { tipo:'TENIS', modalidad:val('ten-mode'), modalidadFinalizada:$('ten-modality-finalized')?.checked===true, jugadorA:{nombre:val('ten-a'),escuelaCodigo:val('ten-a-school')}, jugadorB:{nombre:val('ten-b'),escuelaCodigo:val('ten-b-school')}, sets:[1,2,3].map(s=>({set:s,gamesA:num(`ten-${s}-a`),gamesB:num(`ten-${s}-b`)})), estadisticas:{acesA:num('ten-aces-a'),acesB:num('ten-aces-b'),dobleFaltaA:num('ten-df-a'),dobleFaltaB:num('ten-df-b')}, ganador:val('ten-winner') };
   if (d === 'Tiro Deportivo') return { tipo:'TIRO_DEPORTIVO', modalidad:val('sh-mode'), arma:val('sh-weapon'), participantes:collectRows('sh',10,i=>{const name=val(`sh-${i}-name`); if(!name) return null; return {dorsal:val(`sh-${i}-dorsal`),nombre:name,escuelaCodigo:val(`sh-${i}-school`),sexo:val(`sh-${i}-sex`),series:[1,2,3,4,5,6].map(s=>({serie:s,puntaje:num(`sh-${i}-s${s}`)})),total:num(`sh-${i}-total`),xCentros:num(`sh-${i}-x`),observaciones:val(`sh-${i}-obs`)}})};
   if (d === 'Pentatlón') {
@@ -580,7 +658,7 @@ function buildResultData(d) {
   }
   if (d === 'Orientación Militar') return { tipo:'ORIENTACION_MILITAR', participantes:collectRows('or',10,i=>{const name=val(`or-${i}-name`); if(!name) return null; return {dorsal:i,grado:val(`or-${i}-grado`),nombre:name,escuelaCodigo:val(`or-${i}-school`),idChip:val(`or-${i}-chip`),salida:val(`or-${i}-start`),llegada:val(`or-${i}-finish`),tiempoBruto:val(`or-${i}-gross`),erroresTiro:num(`or-${i}-shoot`),erroresBaliza:num(`or-${i}-beacon`),penalizacion:val(`or-${i}-penalty`),tiempoDefinitivo:val(`or-${i}-final`),estado:val(`or-${i}-status`)}})};
   if (d === 'Atletismo') return { tipo:'ATLETISMO', modalidad:val('at-mode'), prueba:val('at-event'), fase:val('at-phase'), serie:num('at-heat'), cronometraje:val('at-timing'), viento:val('at-wind'), participantes:collectRows('at',12,i=>{const name=val(`at-${i}-name`); if(!name) return null; return {carrilDorsal:val(`at-${i}-lane`),nombre:name,escuelaCodigo:val(`at-${i}-school`),sexo:val(`at-${i}-sex`),marcaTiempo:val(`at-${i}-mark`),intentos:[1,2,3,4,5,6].map(n=>val(`at-${i}-i${n}`)),estado:val(`at-${i}-status`)}})};
-  if (d === 'Natación') return { tipo:'NATACION', prueba:val('sw-event'), estilo:val('sw-style'), fase:val('sw-phase'), participantes:collectRows('sw',10,i=>{const name=val(`sw-${i}-name`); if(!name) return null; return {carril:val(`sw-${i}-lane`),licencia:val(`sw-${i}-lic`),nombre:name,escuelaCodigo:val(`sw-${i}-school`),sexo:val(`sw-${i}-sex`),tiempoEntrada:val(`sw-${i}-entry`),parciales:[val(`sw-${i}-s1`),val(`sw-${i}-s2`),val(`sw-${i}-s3`)].filter(Boolean),tiempoFinal:val(`sw-${i}-final`),posicion:num(`sw-${i}-pos`),estado:val(`sw-${i}-status`)}})};
+  if (d === 'Natación') return { tipo:'NATACION', prueba:val('sw-event'), estilo:val('sw-style'), fase:val('sw-phase'), participantes:collectRows('sw',10,i=>{const name=val(`sw-${i}-name`); if(!name) return null; return {carril:val(`sw-${i}-lane`),licencia:val(`sw-${i}-lic`),nombre:name,escuelaCodigo:val(`sw-${i}-school`),sexo:val(`sw-${i}-sex`),tiempoFinal:val(`sw-${i}-final`),posicion:num(`sw-${i}-pos`),estado:val(`sw-${i}-status`)}})};
   return {tipo:d};
 }
 
@@ -676,7 +754,74 @@ async function initFormFirebase() {
 }
 
 function localResults() { try{return JSON.parse(localStorage.getItem('enap_resultados_deportivos')||'[]')}catch{return []} }
-function saveLocal(result) { const arr=localResults(); arr.push({...result,id:`local-${Date.now()}`}); localStorage.setItem('enap_resultados_deportivos',JSON.stringify(arr)); window.dispatchEvent(new CustomEvent('resultadosLocalesActualizados')); }
+function saveLocal(result, id=null) {
+  const arr=localResults();
+  if (id) { const i=arr.findIndex(x=>x.id===id); if(i<0) throw new Error('No se encontró el resultado local que se intenta corregir.'); arr[i]={...arr[i],...result,id}; }
+  else arr.push({...result,id:`local-${Date.now()}`});
+  localStorage.setItem('enap_resultados_deportivos',JSON.stringify(arr));
+  window.dispatchEvent(new CustomEvent('resultadosLocalesActualizados'));
+}
+function getCurrentResults() { return $('local-test-mode')?.checked ? localResults() : firebaseResultsCache; }
+function compKey(x) { return String(x?.competenciaId || x?.competenciaCodigo || x?.codigo || x?.idSugerido || x?.id || '').trim(); }
+function sameCompetition(a,b) { const aid=String(a?.id||a?.competenciaId||''); const bid=String(b?.competenciaId||b?.id||''); const ac=String(first(a,['codigo','idSugerido','competenciaCodigo'])||''); const bc=String(first(b,['competenciaCodigo','codigo','idSugerido'])||''); return (!!aid && aid===bid) || (!!ac && ac===bc); }
+function isCompetitionSaved(c, results) { const key=compKey(c); return !!key && results.some(r => compKey(r)===key || String(r?.competenciaId||'')===String(c.id||'')); }
+async function loadExistingResults(force=false) {
+  if ($('local-test-mode')?.checked) return localResults();
+  if (!db || !auth?.currentUser) return firebaseResultsCache;
+  if (resultCacheLoaded && !force) return firebaseResultsCache;
+  const snap=await getDocs(collection(db,'Resultados'));
+  firebaseResultsCache=snap.docs.map(d=>({id:d.id,...d.data(),_source:'firebase'}));
+  resultCacheLoaded=true;
+  return firebaseResultsCache;
+}
+function resultDate(r) { const v=r?.actualizadoEn || r?.registradoEn || r?.creadoEn; if(typeof v==='string') return v; if(v?.toDate) return v.toDate().toISOString(); return ''; }
+function renderSavedResultsManager() {
+  const results=getCurrentResults().slice().sort((a,b)=>resultDate(b).localeCompare(resultDate(a)));
+  shell(`<div class="flex items-center justify-between border-b border-slate-700 pb-4"><div><h3 class="text-xl font-bold text-white">Resultados registrados</h3><p class="text-sm text-slate-400">Seleccione un resultado para corregirlo. La edición actualiza el registro existente, no crea uno nuevo.</p></div><button id="back-results-form" class="form-btn secondary">Volver</button></div><div class="text-xs text-amber-200">Fuente: ${$('local-test-mode')?.checked?'modo prueba local (este navegador)':'Firebase · colección Resultados'}</div><div class="space-y-3">${results.length?results.map(r=>`<article class="form-section flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="font-bold text-white">${esc(r.competenciaDescripcion||r.competenciaCodigo||'Competencia')}</div><div class="text-sm text-slate-300">${esc(r.disciplinaNombre||'')} · Jornada ${esc(r.jornadaNombre||r.jornadaCodigo||'—')}</div><div class="text-xs text-slate-400">${esc(r.estadoCompetenciaNombre||r.estadoCompetencia||r.estado||'')} · ${esc(resultDate(r)||'Sin fecha de registro')}</div></div><button type="button" class="form-btn primary edit-saved-result" data-id="${esc(r.id||'')}" data-source="${$('local-test-mode')?.checked?'local':'firebase'}">Editar resultado</button></article>`).join(''):'<div class="form-summary">No hay resultados registrados en esta fuente.</div>'}</div>`);
+  $('back-results-form').onclick=()=>{ renderBaseForm(); $('admin-session-badge').textContent=`Administrador: ${currentAdminProfile.nombre}`; };
+  document.querySelectorAll('.edit-saved-result').forEach(btn=>btn.onclick=()=>beginEditResult(btn.dataset.id,btn.dataset.source));
+}
+async function beginEditResult(id, source) {
+  let result;
+  if(source==='local') result=localResults().find(r=>r.id===id);
+  else { await loadExistingResults(true); result=firebaseResultsCache.find(r=>r.id===id); }
+  if(!result) { alert('No se encontró el resultado seleccionado. Actualice la lista e intente nuevamente.'); return; }
+  editingResultId=id; editingResultSource=source; editingResultData=result;
+  renderBaseForm();
+  $('local-test-mode').checked=source==='local'; $('local-test-mode').disabled=true;
+  $('admin-session-badge').textContent=`Administrador: ${currentAdminProfile.nombre} · Editando resultado existente`;
+  const c=competencias.find(x=>sameCompetition(x,result));
+  if(!c) { alert('No se encontró la competencia en el catálogo actual; no se modificó ningún dato.'); editingResultId=null; editingResultSource=null; editingResultData=null; return; }
+  $('digital-discipline').value=disciplineName(c); refreshCompetitions();
+  $('digital-jornada-select').value=jornadaValue(c)||'__SIN_JORNADA__'; refreshCompetitionOptionsByJornada();
+  $('digital-competition').innerHTML += `<option value="${esc(c.id)}">${esc(first(c,['codigo','idSugerido','id']))} · ${esc(first(c,['descripcion','nombre','Nombre'])||'Competencia')} (editando)</option>`;
+  $('digital-competition').value=c.id; loadCompetitionDetails();
+  hydrateResultForm(result);
+  $('digital-status').value=result.estado||'REGISTRADO'; $('digital-responsible').value=result.responsable||''; $('digital-observations').value=result.observaciones||'';
+  $('digital-form-status').textContent='Modo edición: al guardar se actualizará el resultado seleccionado.';
+  $('digital-result-form').querySelector('button[type=submit]').innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>Guardar corrección';
+}
+function setValue(id,value) { const el=$(id); if(el && value!==undefined && value!==null) el.value=String(value); }
+function hydrateResultForm(r) {
+  const d=r.disciplinaNombre, x=r.resultadoDeportivo||{};
+  setValue('competition-status',r.estadoCompetencia||'COMPETENCIA_FINALIZADA'); setValue('collective-phase',r.faseCompetencia||'CLASIFICACION');
+  if(d==='Taekwondo') {
+    const list=$('tk-bouts-list'); const bouts=Array.isArray(x.combates)?x.combates:[];
+    if(!bouts.length) return;
+    list.innerHTML=bouts.map((_,i)=>taekwondoBoutCard(i)).join('');
+    bouts.forEach((b,i)=>{ const p=`tk-${i}`; setValue(`${p}-sex`,b.sexo); const sexEl=$(`${p}-sex`); if(sexEl) sexEl.dispatchEvent(new Event('change',{bubbles:true})); setValue(`${p}-weight`,b.categoriaPeso); setValue(`${p}-a-name`,b.competidorA?.nombre); setValue(`${p}-a-school`,b.competidorA?.escuelaCodigo); setValue(`${p}-b-name`,b.competidorB?.nombre); setValue(`${p}-b-school`,b.competidorB?.escuelaCodigo); setValue(`${p}-final`,b.resultadoFinal); setValue(`${p}-winner`,b.ganador); setValue(`${p}-end`,b.formaFinalizacion); setValue(`${p}-notes`,b.observaciones); (b.rounds||[]).forEach(q=>{setValue(`${p}-${q.round}-a`,q.puntosA);setValue(`${p}-${q.round}-b`,q.puntosB);setValue(`${p}-${q.round}-ga`,q.gamJeomA);setValue(`${p}-${q.round}-gb`,q.gamJeomB);}); });
+  } else {
+    // Rehidrata los controles que comparten identificadores con la estructura de resultado.
+    const map={
+      'Fútbol':()=>{setValue('team-local',x.equipos?.[0]?.escuelaCodigo);setValue('team-visitor',x.equipos?.[1]?.escuelaCodigo);setValue('f-1t-l',x.marcador?.primerTiempo?.local);setValue('f-1t-v',x.marcador?.primerTiempo?.visitante);setValue('f-2t-l',x.marcador?.segundoTiempo?.local);setValue('f-2t-v',x.marcador?.segundoTiempo?.visitante);setValue('f-te-l',x.marcador?.tiempoExtra?.local);setValue('f-te-v',x.marcador?.tiempoExtra?.visitante);setValue('f-pen-l',x.marcador?.penaltis?.local);setValue('f-pen-v',x.marcador?.penaltis?.visitante);setValue('f-winner',x.ganador);setValue('f-incidents',x.incidencias);},
+      'Baloncesto':()=>{setValue('team-local',x.equipos?.[0]?.escuelaCodigo);setValue('team-visitor',x.equipos?.[1]?.escuelaCodigo);(x.periodos||[]).forEach(q=>{setValue(`b-${q.periodo}-l`,q.local);setValue(`b-${q.periodo}-v`,q.visitante)});setValue('b-ot',x.tiempoExtra);setValue('b-winner',x.ganador);setValue('b-notes',x.observaciones);},
+      'Voleibol':()=>{setValue('team-local',x.equipos?.[0]?.escuelaCodigo);setValue('team-visitor',x.equipos?.[1]?.escuelaCodigo);(x.sets||[]).forEach(q=>{setValue(`v-${q.set}-l`,q.local);setValue(`v-${q.set}-v`,q.visitante)});setValue('v-sets-l',x.setsGanadosLocal);setValue('v-sets-v',x.setsGanadosVisitante);setValue('v-winner',x.ganador);},
+      'Natación':()=>{setValue('sw-event',x.prueba);setValue('sw-style',x.estilo);setValue('sw-phase',x.fase);(x.participantes||[]).forEach((p,i)=>{const n=i+1;setValue(`sw-${n}-lane`,p.carril);setValue(`sw-${n}-lic`,p.licencia);setValue(`sw-${n}-name`,p.nombre);setValue(`sw-${n}-school`,p.escuelaCodigo);setValue(`sw-${n}-sex`,p.sexo);setValue(`sw-${n}-final`,p.tiempoFinal);setValue(`sw-${n}-pos`,p.posicion);setValue(`sw-${n}-status`,p.estado);});},
+      'Tenis':()=>{setValue('ten-mode',x.modalidad);setValue('ten-a',x.jugadorA?.nombre);setValue('ten-a-school',x.jugadorA?.escuelaCodigo);setValue('ten-b',x.jugadorB?.nombre);setValue('ten-b-school',x.jugadorB?.escuelaCodigo);(x.sets||[]).forEach(q=>{setValue(`ten-${q.set}-a`,q.gamesA);setValue(`ten-${q.set}-b`,q.gamesB)});setValue('ten-aces-a',x.estadisticas?.acesA);setValue('ten-aces-b',x.estadisticas?.acesB);setValue('ten-df-a',x.estadisticas?.dobleFaltaA);setValue('ten-df-b',x.estadisticas?.dobleFaltaB);setValue('ten-winner',x.ganador);if($('ten-modality-finalized'))$('ten-modality-finalized').checked=x.modalidadFinalizada===true;}
+    };
+    map[d]?.();
+  }
+}
 
 
 function sanitizeForFirestore(value) {
@@ -736,6 +881,17 @@ async function saveResult(event) {
       return;
     }
   }
+  if (d === 'Taekwondo') {
+    const cards=[...document.querySelectorAll('#tk-bouts-list .tk-bout-card')];
+    if (!cards.length) { status.textContent='Agregue al menos un combate.'; return; }
+    for (let i=0;i<cards.length;i++) {
+      const p=`tk-${i}`;
+      const a=val(`${p}-a-name`).trim(), b=val(`${p}-b-name`).trim();
+      const sa=val(`${p}-a-school`), sb=val(`${p}-b-school`), weight=val(`${p}-weight`), winner=val(`${p}-winner`);
+      if (!a || !b || !sa || !sb || !weight || !winner) { status.textContent=`Complete competidores, escuelas, peso y ganador del combate ${i+1}.`; return; }
+      if (a.toLowerCase()===b.toLowerCase() && sa===sb) { status.textContent=`El combate ${i+1} no puede enfrentar al mismo participante consigo mismo.`; return; }
+    }
+  }
   const resultadoDeportivo=buildResultData(d);
   const faseActual = COLECTIVOS.has(d) ? ($('collective-phase')?.value || 'CLASIFICACION') : 'FINAL';
   const clasificacion=deriveClassification(d,resultadoDeportivo,faseActual);
@@ -779,7 +935,7 @@ async function saveResult(event) {
   try {
     const local=$('local-test-mode').checked;
     if(local) {
-      saveLocal({...result,registradoPor:auth?.currentUser?.uid||'',registradoPorNombre:currentAdminProfile.nombre||'Administrador'});
+      saveLocal({...result,registradoPor:auth?.currentUser?.uid||'',registradoPorNombre:currentAdminProfile.nombre||'Administrador', ...(editingResultId?{actualizadoPor:currentAdminProfile.uid||''}:{})}, editingResultId && editingResultSource==='local' ? editingResultId : null);
       status.className='text-sm text-emerald-400';
       status.textContent='Resultado guardado en modo prueba local.';
     } else {
@@ -788,18 +944,22 @@ async function saveResult(event) {
       const { user } = await requireActiveAdmin();
       const payload = sanitizeForFirestore({
         ...result,
-        registradoPor: user.uid,
-        registradoPorNombre: currentAdminProfile.nombre,
+        registradoPor: editingResultId && editingResultSource==='firebase' ? (editingResultData?.registradoPor||user.uid) : user.uid,
+        registradoPorNombre: editingResultData?.registradoPorNombre || currentAdminProfile.nombre,
         actualizadoPor: user.uid,
-        creadoEn: serverTimestamp(),
-        actualizadoEn: serverTimestamp()
+        ...(editingResultId && editingResultSource==='firebase' ? {actualizadoEn:serverTimestamp()} : {creadoEn:serverTimestamp(),actualizadoEn:serverTimestamp()})
       });
-      const ref=await addDoc(collection(db,'Resultados'),payload);
-      result.id=ref.id;
+      let refId;
+      if(editingResultId && editingResultSource==='firebase') { await updateDoc(doc(db,'Resultados',editingResultId),payload); refId=editingResultId; }
+      else { const ref=await addDoc(collection(db,'Resultados'),payload); refId=ref.id; }
+      result.id=refId;
+      firebaseResultsCache=firebaseResultsCache.filter(r=>r.id!==refId); firebaseResultsCache.push({...result,id:refId}); resultCacheLoaded=true;
       window.dispatchEvent(new CustomEvent('resultadoFirebaseGuardado'));
       status.className='text-sm text-emerald-400';
-      status.textContent=`Resultado guardado correctamente en Firebase. ID: ${ref.id}`;
+      status.textContent=`${editingResultId?'Corrección actualizada':'Resultado guardado'} correctamente en Firebase. ID: ${refId}`;
     }
+    editingResultId=null; editingResultSource=null; editingResultData=null;
+    await loadExistingResults(true).catch(e=>console.warn('No se pudo actualizar la lista de resultados',e));
     setTimeout(()=>window.closeModal('admin-modal'),900);
   } catch(error) {
     console.error('Error guardando Resultado:', error);

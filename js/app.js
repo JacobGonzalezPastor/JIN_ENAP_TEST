@@ -390,6 +390,23 @@ function exportRowsForCompetition(r){
     rows.push({...base,detalle:'Partido',escuela:teams[0]||'',escuelaContraria:teams[1]||'',participante:'',resultado:scoreA!==null&&scoreB!==null?`${scoreA} - ${scoreB}`:'',posicion:'',puntos:(puntosDerivadosResultado(r).find(x=>x.escuelaCodigo===teams[0])?.puntos??''),ganador:matchWinner(r)||'',datosAdicionales:flattenValue(rd)});
     return rows;
   }
+  // Tenis: el PDF debe mostrar el partido registrado aunque el cuadro/modalidad
+  // todavía no esté marcado como finalizado. El ranking de tenis solo aparece
+  // cuando se cierra la modalidad, pero cada partido ya tiene marcador propio.
+  if(discipline(r)==='Tenis' && rd.tipo==='TENIS'){
+    const a=rd.jugadorA||{}, b=rd.jugadorB||{};
+    const sets=Array.isArray(rd.sets)?rd.sets:[];
+    const score=sets
+      .filter(s=>s && (s.gamesA!==undefined && s.gamesA!==null && s.gamesB!==undefined && s.gamesB!==null) && (String(s.gamesA)!=='' || String(s.gamesB)!==''))
+      .map(s=>`${Number(s.gamesA||0)}-${Number(s.gamesB||0)}`)
+      .join(', ');
+    const winnerSide=String(rd.ganador||'').toUpperCase();
+    const winner=winnerSide==='A' ? `${a.escuelaCodigo||''}${a.nombre?` · ${a.nombre}`:''}`
+      : winnerSide==='B' ? `${b.escuelaCodigo||''}${b.nombre?` · ${b.nombre}`:''}`
+      : (rd.ganador||'Pendiente');
+    rows.push({...base,detalle:'Partido de tenis',escuela:a.escuelaCodigo||'',escuelaContraria:b.escuelaCodigo||'',participante:`${a.nombre||'Jugador A'} vs ${b.nombre||'Jugador B'}`,resultado:score||flattenValue(rd.marcador||rd.resultado||''),posicion:'',puntos:'',ganador:winner,datosAdicionales:flattenValue({modalidad:rd.modalidad||r.modalidadCodigo||'',sets,estadisticas:rd.estadisticas||{}})});
+    return rows;
+  }
   const ranking=individualRanking(r);
   if(ranking.length){
     ranking.forEach(p=>{

@@ -45,3 +45,11 @@ Ajuste de tabla general: EMAVI ahora se identifica como “Fuerza Aeroespacial C
 
 
 Modelo de puntuación actualizado: la tabla general acumula puntos por medallas (oro 10, plata 7, bronce 5), mientras los puntos de clasificación deportiva permanecen separados.
+
+
+## Edición de resultados (pruebas)
+Consulte `docs/EDICION_RESULTADOS_SIN_DUPLICADOS.md`. La edición usa el ID del registro existente para evitar duplicados; el modo local permanece predeterminado.
+
+
+## Ajuste de Natación (tiempo único)
+La planilla registra únicamente el campo **Tiempo final** por participante; se quitaron entrada y parciales. La edición rehidrata prueba, estilo, fase y participantes. Ver `docs/AJUSTE-NATACION-TIEMPO-UNICO.md`. Este paquete es solo de pruebas.
