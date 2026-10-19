@@ -2,3 +2,11 @@ JIN-ENAP Fase 7 V18 - PRUEBAS
 Cambio: formulario Taekwondo con múltiples combates y selección de categorías de peso como referencia World Taekwondo senior.
 Entorno: PRUEBAS. No desplegar en producción hasta validar formulario, clasificación, medallería y persistencia.
 Verificación realizada: node --check js/resultados-form.js
+
+
+CAMBIOS 2026-10-18
+- Tabla general y tarjetas: ahora muestran Total de medallas (oro + plata + bronce), en lugar de puntaje total.
+- Se conserva el orden estricto del medallero: oro, plata, bronce; el puntaje ponderado 1000/100/1 no determina el puesto.
+- Tenis: se robusteció la detección del cierre de modalidad/categoría; el podio se calcula al cerrar esa categoría/modalidad, sin esperar a que terminen las demás categorías de Tenis. Se añadió un mensaje que explica el cierre pendiente.
+
+Corrección: medallas de Atletismo derivadas en tabla general y tarjetas al cerrar modalidad.

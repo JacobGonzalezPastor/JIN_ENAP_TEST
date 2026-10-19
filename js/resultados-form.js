@@ -165,9 +165,9 @@ function renderBaseForm() {
     <form id="digital-result-form" class="space-y-5">
       <section class="form-section">
         <div class="flex flex-wrap items-center justify-between gap-3"><h4>1. Competencia</h4>
-          <label class="flex items-center gap-2 text-sm text-amber-200"><input id="local-test-mode" type="checkbox" checked> Modo prueba local</label>
+          <label class="flex items-center gap-2 text-sm text-amber-200"><input id="local-test-mode" type="checkbox" checked disabled> Modo prueba local (bloqueado en esta versión)</label>
         </div>
-        <p class="text-xs text-slate-400 mb-3">En modo prueba el documento usa exactamente el mismo modelo de <b>Resultados</b>, pero se guarda en este navegador. Desmarque la opción para escribir en Firebase.</p>
+        <p class="text-xs text-slate-400 mb-3">Esta versión está bloqueada en modo de pruebas: los resultados se guardan únicamente en este navegador y no se envían a Firebase.</p>
         <div class="form-grid two">
           ${field('Disciplina', select('digital-discipline','<option value="">Seleccione una disciplina</option>'+Object.values(DISCIPLINAS).map(d=>`<option>${d}</option>`).join(''),true))}
           ${field('Jornada',select('digital-jornada-select','<option value="">Seleccione primero una disciplina</option>',true))}
@@ -196,12 +196,13 @@ function renderBaseForm() {
       </section>
 
       <div id="digital-form-status" class="text-sm text-slate-300"></div>
-      <div class="flex justify-end gap-3 border-t border-slate-700 pt-4"><button type="button" id="cancel-digital-form" class="form-btn secondary">Cancelar</button><button type="submit" class="form-btn primary"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Guardar en Resultados</button></div>
+      <div class="flex justify-end gap-3 border-t border-slate-700 pt-4"><button type="button" id="cancel-digital-form" class="form-btn secondary">Cancelar</button><button type="submit" class="form-btn primary"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Guardar prueba local</button></div>
     </form>`);
 
   $('close-digital-form').onclick = () => window.closeModal('admin-modal');
   $('manage-saved-results').onclick = renderSavedResultsManager;
-  $('local-test-mode').addEventListener('change', async () => { await loadExistingResults(); refreshCompetitionOptionsByJornada(); });
+  $('local-test-mode').checked = true; $('local-test-mode').disabled = true;
+  $('local-test-mode').addEventListener('change', async () => { $('local-test-mode').checked = true; await loadExistingResults(); refreshCompetitionOptionsByJornada(); });
   $('cancel-digital-form').onclick = () => { editingResultId=null; editingResultSource=null; editingResultData=null; window.closeModal('admin-modal'); };
   $('logout-admin').onclick = async () => { try { if(auth) await signOut(auth); } finally { renderAdminLogin(); } };
   $('digital-discipline').addEventListener('change', refreshCompetitions);
@@ -209,7 +210,7 @@ function renderBaseForm() {
   $('digital-competition').addEventListener('change', loadCompetitionDetails);
   $('collective-phase')?.addEventListener('change', updateCollectivePhaseNotice);
   $('digital-result-form').addEventListener('submit', saveResult);
-  $('digital-result-form').querySelector('button[type=submit]').innerHTML = editingResultId ? '<i class="fa-solid fa-floppy-disk mr-2"></i>Guardar corrección' : '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Guardar en Resultados';
+  $('digital-result-form').querySelector('button[type=submit]').innerHTML = editingResultId ? '<i class="fa-solid fa-floppy-disk mr-2"></i>Guardar corrección local' : '<i class="fa-solid fa-floppy-disk mr-2"></i>Guardar prueba local';
 }
 
 function updateCollectivePhaseVisibility(discipline) {
@@ -587,7 +588,6 @@ function bindDynamicCalculations(d) {
     const fill=(id,ids)=>{const el=$(id);if(!el)return;const current=el.value;el.innerHTML='<option value="">Seleccione</option>'+ids.map(x=>`<option value="${x}">${esc(labels[x])} · ${esc(names()[x])}</option>`).join('');if(ids.includes(current))el.value=current;};
     const updateBracket=()=>{
       const n=names();
-      ['A','B','C','D'].forEach(id=>{$(`e-p${id.toLowerCase()}-name`)?.addEventListener('input',updateBracket);$(`e-p${id.toLowerCase()}-school`)?.addEventListener('change',updateBracket);});
       fill('e-sf1-a',['A']); fill('e-sf1-b',['B']);
       fill('e-sf2-a',['C']); fill('e-sf2-b',['D']);
       const w1=val('e-sf1-winner'),w2=val('e-sf2-winner');
@@ -601,6 +601,12 @@ function bindDynamicCalculations(d) {
       if($('e-third-a-label'))$('e-third-a-label').textContent=tA?`${tA} · ${n[tA]}`:'Perdedor SF1';
       if($('e-third-b-label'))$('e-third-b-label').textContent=tB?`${tB} · ${n[tB]}`:'Perdedor SF2';
     };
+    // Registrar los listeners una sola vez. Antes se agregaban dentro de updateBracket,
+    // acumulando manejadores en cada cambio y provocando actualizaciones repetidas.
+    ['A','B','C','D'].forEach(id=>{
+      $(`e-p${id.toLowerCase()}-name`)?.addEventListener('input',updateBracket);
+      $(`e-p${id.toLowerCase()}-school`)?.addEventListener('change',updateBracket);
+    });
     ['e-sf1-winner','e-sf2-winner','e-final-winner','e-third-winner'].forEach(id=>$(id)?.addEventListener('change',updateBracket));
     ['e-sf1-a','e-sf1-b','e-sf2-a','e-sf2-b','e-final-a','e-final-b','e-third-a','e-third-b'].forEach(id=>$(id)?.addEventListener('change',updateBracket));
     updateBracket();
@@ -616,7 +622,7 @@ function buildResultData(d) {
   if (d === 'Baloncesto') return { tipo:'BALONCESTO', equipos:[{escuelaCodigo:val('team-local')},{escuelaCodigo:val('team-visitor')}], periodos:[1,2,3,4].map(q=>({periodo:q,local:num(`b-${q}-l`),visitante:num(`b-${q}-v`)})), tiempoExtra:val('b-ot'), ganador:val('b-winner'), observaciones:val('b-notes') };
   if (d === 'Voleibol') return { tipo:'VOLEIBOL', equipos:[{escuelaCodigo:val('team-local')},{escuelaCodigo:val('team-visitor')}], sets:[1,2,3,4,5].map(s=>({set:s,local:num(`v-${s}-l`),visitante:num(`v-${s}-v`)})).filter(x=>x.local||x.visitante), setsGanadosLocal:num('v-sets-l'), setsGanadosVisitante:num('v-sets-v'), ganador:val('v-winner') };
   if (d === 'Esgrima') {
-    const participants=['A','B','C','D'].map(id=>({id,nombre:val(`e-p${id.toLowerCase()}-name`),escuelaCodigo:val(`e-p${id.toLowerCase()}-school`)}));
+    const participantes=['A','B','C','D'].map(id=>({id,nombre:val(`e-p${id.toLowerCase()}-name`),escuelaCodigo:val(`e-p${id.toLowerCase()}-school`)}));
     const bout=(prefix)=>({participanteA:val(`${prefix}-a`),participanteB:val(`${prefix}-b`),periodos:[1,2,3].map(p=>({periodo:p,toquesA:num(`${prefix}-${p}-a`),toquesB:num(`${prefix}-${p}-b`)})),sanciones:{A:val(`${prefix}-san-a`),B:val(`${prefix}-san-b`)},ganador:val(`${prefix}-winner`)});
     return {tipo:'ESGRIMA_ELIMINACION_DIRECTA',formato:'4_PARTICIPANTES',arma:val('e-weapon'),participantes,cuadro:{semifinal1:bout('e-sf1'),semifinal2:bout('e-sf2'),final:bout('e-final'),tercerPuesto:bout('e-third')}};
   }
@@ -688,6 +694,41 @@ function deriveClassification(d, data, phase = 'CLASIFICACION') {
     teams.forEach(school=>out.push({posicion:null, escuelaCodigo:school}));
     return out;
   }
+  if (d === 'Orientación Militar' && Array.isArray(data.participantes)) {
+    // Orientación Militar se disputa como una prueba de una sola jornada:
+    // al guardar la planilla completa se define inmediatamente el podio.
+    // Menor tiempo definitivo = mejor posición; DNF/DNS/DSQ no compiten por medalla.
+    const toMs = value => {
+      const text = String(value ?? '').trim();
+      if (!text) return Number.POSITIVE_INFINITY;
+      const parts = text.split(':');
+      if (parts.some(part => part === '' || !Number.isFinite(Number(part)))) return Number.POSITIVE_INFINITY;
+      if (parts.length === 3) return Number(parts[0]) * 3600000 + Number(parts[1]) * 60000 + Number(parts[2]) * 1000;
+      if (parts.length === 2) return Number(parts[0]) * 60000 + Number(parts[1]) * 1000;
+      const numeric = Number(text.replace(',', '.'));
+      return Number.isFinite(numeric) ? numeric * 1000 : Number.POSITIVE_INFINITY;
+    };
+    const eligible = data.participantes.filter(p => {
+      const status = String(p.estado || 'FINAL').trim().toUpperCase();
+      return p.nombre && p.escuelaCodigo && !['DNF','DNS','DSQ','DQ','DESCALIFICADO'].includes(status)
+        && (String(p.tiempoDefinitivo || '').trim() || Number(p.posicion) > 0);
+    });
+    const hasTimes = eligible.some(p => String(p.tiempoDefinitivo || '').trim());
+    const ordered = [...eligible].sort((a,b) => {
+      if (hasTimes) return toMs(a.tiempoDefinitivo) - toMs(b.tiempoDefinitivo);
+      return Number(a.posicion || Number.MAX_SAFE_INTEGER) - Number(b.posicion || Number.MAX_SAFE_INTEGER);
+    });
+    ordered.forEach((p, i) => out.push({
+      posicion: i + 1,
+      escuelaCodigo: p.escuelaCodigo,
+      participanteId: p.id || p.participanteId || null,
+      nombre: p.nombre || '',
+      resultado: p.tiempoDefinitivo || p.resultado || '',
+      tiempoDefinitivo: p.tiempoDefinitivo || '',
+      estado: p.estado || 'FINAL'
+    }));
+    return out;
+  }
   if (d === 'Esgrima') {
     const ps=Array.isArray(data.participantes)?data.participantes:[];
     const map=Object.fromEntries(ps.map(p=>[p.id,p]));
@@ -712,7 +753,7 @@ function deriveMedals(classification) {
   return classification.filter(x=>[1,2,3].includes(Number(x.posicion))).map(x=>({tipo:['','ORO','PLATA','BRONCE'][Number(x.posicion)],escuelaCodigo:x.escuelaCodigo,participanteId:x.participanteId||null,nombre:x.nombre||''}));
 }
 
-const PUNTOS_GENERALES_MEDALLAS = { ORO: 10, PLATA: 7, BRONCE: 5 };
+const PUNTOS_GENERALES_MEDALLAS = { ORO: 1000, PLATA: 100, BRONCE: 1 };
 function deriveGeneralMedalPoints(medals) {
   return (medals || []).map(m => ({
     escuelaCodigo: m.escuelaCodigo,
@@ -881,6 +922,23 @@ async function saveResult(event) {
       return;
     }
   }
+  if (d === 'Esgrima') {
+    const ids=['a','b','c','d'];
+    const participants=ids.map(id=>({name:val(`e-p${id}-name`).trim(),school:val(`e-p${id}-school`)}));
+    if (participants.some(p=>!p.name || !p.school)) {
+      status.textContent='Esgrima: complete el nombre y la escuela de los cuatro participantes.'; return;
+    }
+    if (new Set(participants.map(p=>p.name.toLocaleLowerCase('es')+'|'+p.school)).size !== 4) {
+      status.textContent='Esgrima: cada participante debe ser único en el cuadro.'; return;
+    }
+    const bouts=[['e-sf1','semifinal 1'],['e-sf2','semifinal 2'],['e-final','final'],['e-third','tercer puesto']];
+    for (const [prefix,label] of bouts) {
+      const a=val(`${prefix}-a`), b=val(`${prefix}-b`), winner=val(`${prefix}-winner`);
+      if (!a || !b || a===b || !winner || ![a,b].includes(winner)) {
+        status.textContent=`Esgrima: complete los participantes y el ganador de ${label}. Verifique primero las dos semifinales.`; return;
+      }
+    }
+  }
   if (d === 'Taekwondo') {
     const cards=[...document.querySelectorAll('#tk-bouts-list .tk-bout-card')];
     if (!cards.length) { status.textContent='Agregue al menos un combate.'; return; }
@@ -933,7 +991,7 @@ async function saveResult(event) {
     esquemaVersion:'JIE26-RESULTADOS-v1'
   };
   try {
-    const local=$('local-test-mode').checked;
+    const local=true; // Esta compilación de pruebas nunca escribe en Firebase.
     if(local) {
       saveLocal({...result,registradoPor:auth?.currentUser?.uid||'',registradoPorNombre:currentAdminProfile.nombre||'Administrador', ...(editingResultId?{actualizadoPor:currentAdminProfile.uid||''}:{})}, editingResultId && editingResultSource==='local' ? editingResultId : null);
       status.className='text-sm text-emerald-400';
