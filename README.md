@@ -53,10 +53,3 @@ Consulte `docs/EDICION_RESULTADOS_SIN_DUPLICADOS.md`. La edición usa el ID del 
 
 ## Ajuste de Natación (tiempo único)
 La planilla registra únicamente el campo **Tiempo final** por participante; se quitaron entrada y parciales. La edición rehidrata prueba, estilo, fase y participantes. Ver `docs/AJUSTE-NATACION-TIEMPO-UNICO.md`. Este paquete es solo de pruebas.
-
-
-## Ajuste Orientación Militar — podio en la misma jornada
-- Al guardar la planilla completa, la clasificación se calcula inmediatamente por menor tiempo definitivo.
-- Los estados DNF, DNS y DSQ se excluyen del podio.
-- La clasificación calculada alimenta las medallas y puntos generales en el mismo guardado local de pruebas.
-- Si no hay tiempos definitivos, se usa la posición ingresada por el operador; no se inventan tiempos.

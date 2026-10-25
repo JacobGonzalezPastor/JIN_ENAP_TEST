@@ -7,11 +7,11 @@ const DISCIPLINAS={"1":"Fútbol","2":"Baloncesto","3":"Voleibol","4":"Esgrima","
 const ESCUELAS={ENAP:{name:'ENAP',subtitle:'Armada Nacional'},EMAVI:{name:'EMAVI',subtitle:'Fuerza Aeroespacial Colombiana'},ESMIC:{name:'ESMIC',subtitle:'Ejército Nacional'},ECSAN:{name:'ECSAN',subtitle:'Policía Nacional'}};
 const COLECTIVOS=new Set(['Fútbol','Baloncesto','Voleibol']);
 // Regla de tabla provisional/configurable: no reemplaza el reglamento institucional.
-// En colectivos, el perdedor nunca recibe puntos. Fútbol/Baloncesto admiten empate; Voleibol no.
+// Fútbol: el perdedor no recibe puntos y admite empate. Baloncesto: victoria 2, derrota 1, sin empate. Voleibol: no admite empate.
 const TABLA_COLECTIVOS={
   'Fútbol':{victoria:3,empate:1,derrota:0},
-  'Baloncesto':{victoria:3,empate:1,derrota:0},
-  'Voleibol':{victoria:3,empate:0,derrota:0}
+  'Baloncesto':{victoria:2,empate:0,derrota:1},
+  'Voleibol':{victoria3a0:5,victoria3a1:4,victoria3a2:3,derrota3a2:2,derrota3a1:1,derrota3a0:0}
 };
 let db,auth;
 let resultsData=[];
@@ -23,7 +23,23 @@ const text=v=>String(v??'');
 const esc=v=>text(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const first=(o,keys)=>{for(const k of keys)if(o?.[k]!==undefined&&o[k]!==null&&o[k]!=='')return o[k];return ''};
 const discipline=r=>r.disciplinaNombre||r.disciplina||DISCIPLINAS[text(r.disciplinaCodigo)]||'';
-const category=r=>r.categoriaNombre||r.categoria||r.categoriaCodigo||'';
+const category=r=>{ const rd=r?.resultadoDeportivo||{}; if(discipline(r)==='Esgrima' && (rd.tipo==='ESGRIMA_EQUIPOS'||rd.modalidad==='EQUIPOS'||r.modalidadCodigo==='EQUIPOS')) return r.categoriaNombre||'ESG_EQUIPOS'; return r.categoriaNombre||r.categoria||r.categoriaCodigo||''; };
+function modalityLabel(r){
+  const rd=r?.resultadoDeportivo||{}; const d=discipline(r);
+  const clean=v=>String(v??'').trim().replace(/_/g,' ').replace(/\s+/g,' ');
+  if(d==='Pentatlón'){
+    const description=clean(first(r,['competenciaDescripcion','descripcionCompetencia','competenciaNombre']));
+    if(description && /tiro|nataci[oó]n|pista|granada|cross|relevo/i.test(description)) return description;
+    const type=clean(first(rd,['tipoPrueba','pruebaFase','modalidadRegistro'])).toUpperCase();
+    const names={TIRO:'Tiro',NATACION:'Natación utilitaria',NATACION_UTILITARIA:'Natación utilitaria',PISTA:'Paso de pista',GRANADA:'Lanzamiento de granada',CROSS:'Cross country',RELEVOS:'Relevos',GENERAL:'Prueba general',INDIVIDUAL_HASTA_16:'Individual'};
+    return names[type]||clean(first(rd,['prueba','modalidad','tipoPrueba']))||'Modalidad sin especificar';
+  }
+  const raw=first(rd,['modalidad','tipoPrueba','prueba','arma']) || first(r,['modalidadNombre','modalidadCodigo','modalidad']);
+  if(raw && !['TENIS','TIRO_DEPORTIVO','PENTATLON','ESGRIMA_ELIMINACION_DIRECTA','ESGRIMA_EQUIPOS'].includes(String(raw).toUpperCase())) return clean(raw);
+  if(d==='Tiro Deportivo' && rd.arma) return `${clean(rd.modalidad)||'Modalidad'} · ${clean(rd.arma)}`;
+  return clean(raw);
+}
+function modalityAndCategory(r){const m=modalityLabel(r),c=category(r);return [m,c].filter(Boolean).filter((v,i,a)=>a.findIndex(x=>x.toLowerCase()===v.toLowerCase())===i).join(' · ');}
 const dateOf=r=>r.fecha||r.date||r.registradoEn?.slice?.(0,10)||'';
 const isCollective=r=>COLECTIVOS.has(discipline(r));
 
@@ -82,6 +98,7 @@ function puntosDerivadosResultado(r){
   if(COLECTIVOS.has(d)){
     const teams=schoolCodesFromMatch(r); if(teams.length<2) return [];
     const winner=matchWinner(r); const tabla=TABLA_COLECTIVOS[d]||{victoria:3,empate:0,derrota:0};
+    if(d==='Voleibol') { const rd=r.resultadoDeportivo||{}; const a=Number(rd.setsGanadosLocal||0), b=Number(rd.setsGanadosVisitante||0); let pa=0,pb=0; if(a>b){pa=b===0?5:b===1?4:3;pb=b===2?2:b===1?1:0;} else if(b>a){pb=a===0?5:a===1?4:3;pa=a===2?2:a===1?1:0;} return [{escuelaCodigo:teams[0],puntos:pa,concepto:a>b?`Victoria ${a}-${b}`:`Derrota ${a}-${b}`},{escuelaCodigo:teams[1],puntos:pb,concepto:b>a?`Victoria ${b}-${a}`:`Derrota ${b}-${a}`}]; }
     if(winner===teams[0]) return [{escuelaCodigo:teams[0],puntos:tabla.victoria,concepto:'Victoria'},{escuelaCodigo:teams[1],puntos:tabla.derrota,concepto:'Derrota'}];
     if(winner===teams[1]) return [{escuelaCodigo:teams[0],puntos:tabla.derrota,concepto:'Derrota'},{escuelaCodigo:teams[1],puntos:tabla.victoria,concepto:'Victoria'}];
     return [{escuelaCodigo:teams[0],puntos:tabla.empate,concepto:'Empate'},{escuelaCodigo:teams[1],puntos:tabla.empate,concepto:'Empate'}];
@@ -114,12 +131,8 @@ function teamScore(r,index){const rd=r.resultadoDeportivo||{};const d=discipline
     const m=rd.marcador||{};
     return Number(m.primerTiempo?.[index?'visitante':'local']||0)+Number(m.segundoTiempo?.[index?'visitante':'local']||0)+Number(m.tiempoExtra?.[index?'visitante':'local']||0);
   }
-  if(d==='Baloncesto'){const base=(rd.periodos||[]).reduce((s,p)=>s+Number(p[index?'visitante':'local']||0),0);const ot=parsePair(rd.tiempoExtra);return base+Number(ot[index?1:0]||0);}
-  if(d==='Voleibol'){
-    const sets=Array.isArray(rd.sets)?rd.sets:[];
-    const wins=sets.reduce((n,set)=>n+(Number(set[index?'visitante':'local']||0)>Number(set[index?'local':'visitante']||0)?1:0),0);
-    return wins || Number(index?rd.setsGanadosVisitante:rd.setsGanadosLocal)||0;
-  }
+  if(d==='Baloncesto'){const m=rd.marcador||{}; if(m[index?'visitante':'local']!==undefined)return Number(m[index?'visitante':'local']||0); return (rd.periodos||[]).reduce((s,p)=>s+Number(p[index?'visitante':'local']||0),0)+Number(parsePair(rd.tiempoExtra)[index?1:0]||0);}
+  if(d==='Voleibol'){return (rd.sets||[]).reduce((sum,set)=>sum+Number(set[index?'visitante':'local']||0),0);}
   return null;
 }
 function matchWinner(r){const rd=r.resultadoDeportivo||{};const teams=schoolCodesFromMatch(r);if(!teams.length)return null;
@@ -149,13 +162,16 @@ function collectiveStats(results,sport,cat){
       else {A.PE++;B.PE++;A.Pts+=TABLA_COLECTIVOS[sport].empate;B.Pts+=TABLA_COLECTIVOS[sport].empate;}
     } else if(sport==='Baloncesto'){
       const fa=teamScore(r,0),fb=teamScore(r,1);A.PF+=fa;A.PC+=fb;B.PF+=fb;B.PC+=fa;
-      if(winner===a){A.PG++;B.PP++;A.Pts+=TABLA_COLECTIVOS[sport].victoria;}
-      else if(winner===b){B.PG++;A.PP++;B.Pts+=TABLA_COLECTIVOS[sport].victoria;}
+      if(winner===a){A.PG++;B.PP++;A.Pts+=TABLA_COLECTIVOS[sport].victoria;B.Pts+=TABLA_COLECTIVOS[sport].derrota;}
+      else if(winner===b){B.PG++;A.PP++;B.Pts+=TABLA_COLECTIVOS[sport].victoria;A.Pts+=TABLA_COLECTIVOS[sport].derrota;}
       else {A.PE++;B.PE++;A.Pts+=TABLA_COLECTIVOS[sport].empate;B.Pts+=TABLA_COLECTIVOS[sport].empate;}
     } else if(sport==='Voleibol'){
-      const sa=Number(r.resultadoDeportivo?.setsGanadosLocal||0),sb=Number(r.resultadoDeportivo?.setsGanadosVisitante||0);A.setsF+=sa;A.setsC+=sb;B.setsF+=sb;B.setsC+=sa;
-      if(winner===a){A.PG++;B.PP++;A.Pts+=TABLA_COLECTIVOS[sport].victoria;}
-      else if(winner===b){B.PG++;A.PP++;B.Pts+=TABLA_COLECTIVOS[sport].victoria;}
+      const rd=r.resultadoDeportivo||{}; const sets=Array.isArray(rd.sets)?rd.sets:[];
+      const sa=Number(rd.setsGanadosLocal??sets.filter(x=>Number(x.local)>Number(x.visitante)).length),sb=Number(rd.setsGanadosVisitante??sets.filter(x=>Number(x.visitante)>Number(x.local)).length);
+      const pfa=sets.reduce((sum,x)=>sum+Number(x.local||0),0),pfb=sets.reduce((sum,x)=>sum+Number(x.visitante||0),0);
+      A.setsF+=sa;A.setsC+=sb;B.setsF+=sb;B.setsC+=sa;A.PF+=pfa;A.PC+=pfb;B.PF+=pfb;B.PC+=pfa;
+      if(winner===a){A.PG++;B.PP++;A.Pts+=sb===0?5:sb===1?4:3;B.Pts+=sb===2?2:sb===1?1:0;}
+      else if(winner===b){B.PG++;A.PP++;B.Pts+=sa===0?5:sa===1?4:3;A.Pts+=sa===2?2:sa===1?1:0;}
     }
   }
   rows.forEach(x=>{x.DG=x.GF-x.GC;x.difSets=x.setsF-x.setsC;x.DP=x.PF-x.PC});
@@ -164,28 +180,73 @@ function collectiveStats(results,sport,cat){
   return rows;
 }
 function collectiveCategories(results,sport){return [...new Set(results.filter(r=>discipline(r)===sport).map(category).filter(Boolean))].sort()}
-function collectiveTableHtml(sport,results,cat){const rows=collectiveStats(results,sport,cat);if(sport==='Voleibol')return `<div class="mt-3 overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-2 text-left">Pos</th><th class="p-2 text-left">Escuela</th><th class="p-2">PJ</th><th class="p-2">PG</th><th class="p-2">PP</th><th class="p-2">Sets +</th><th class="p-2">Sets -</th><th class="p-2">Dif.</th><th class="p-2">Pts</th></tr></thead><tbody>${rows.map(x=>`<tr class="border-b border-slate-800"><td class="p-2 font-bold">${x.posicion}</td><td class="p-2 font-semibold">${esc(x.escuelaCodigo)}</td><td class="p-2 text-center">${x.PJ}</td><td class="p-2 text-center">${x.PG}</td><td class="p-2 text-center">${x.PP}</td><td class="p-2 text-center">${x.setsF}</td><td class="p-2 text-center">${x.setsC}</td><td class="p-2 text-center">${x.difSets}</td><td class="p-2 text-center font-bold text-blue-300">${x.Pts}</td></tr>`).join('')}</tbody></table></div>`;
+function collectiveTableHtml(sport,results,cat){const rows=collectiveStats(results,sport,cat);if(sport==='Voleibol')return `<div class="mt-3 overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-2 text-left">Pos</th><th class="p-2 text-left">Escuela</th><th class="p-2">PJ</th><th class="p-2">PG</th><th class="p-2">PP</th><th class="p-2">Sets +</th><th class="p-2">Sets -</th><th class="p-2">Dif. sets</th><th class="p-2">PF</th><th class="p-2">PC</th><th class="p-2">Dif. pts</th><th class="p-2">Pts</th></tr></thead><tbody>${rows.map(x=>`<tr class="border-b border-slate-800"><td class="p-2 font-bold">${x.posicion}</td><td class="p-2 font-semibold">${esc(x.escuelaCodigo)}</td><td class="p-2 text-center">${x.PJ}</td><td class="p-2 text-center">${x.PG}</td><td class="p-2 text-center">${x.PP}</td><td class="p-2 text-center">${x.setsF}</td><td class="p-2 text-center">${x.setsC}</td><td class="p-2 text-center">${x.difSets}</td><td class="p-2 text-center">${x.PF}</td><td class="p-2 text-center">${x.PC}</td><td class="p-2 text-center">${x.PF-x.PC}</td><td class="p-2 text-center font-bold text-blue-300">${x.Pts}</td></tr>`).join('')}</tbody></table></div>`;
  if(sport==='Baloncesto')return `<div class="mt-3 overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-2 text-left">Pos</th><th class="p-2 text-left">Escuela</th><th class="p-2">PJ</th><th class="p-2">PG</th><th class="p-2">PP</th><th class="p-2">PF</th><th class="p-2">PC</th><th class="p-2">Dif.</th><th class="p-2">Pts</th></tr></thead><tbody>${rows.map(x=>`<tr class="border-b border-slate-800"><td class="p-2 font-bold">${x.posicion}</td><td class="p-2 font-semibold">${esc(x.escuelaCodigo)}</td><td class="p-2 text-center">${x.PJ}</td><td class="p-2 text-center">${x.PG}</td><td class="p-2 text-center">${x.PP}</td><td class="p-2 text-center">${x.PF}</td><td class="p-2 text-center">${x.PC}</td><td class="p-2 text-center">${x.DP}</td><td class="p-2 text-center font-bold text-blue-300">${x.Pts}</td></tr>`).join('')}</tbody></table></div>`;
  return `<div class="mt-3 overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-2 text-left">Pos</th><th class="p-2 text-left">Escuela</th><th class="p-2">PJ</th><th class="p-2">PG</th><th class="p-2">PE</th><th class="p-2">PP</th><th class="p-2">GF</th><th class="p-2">GC</th><th class="p-2">DG</th><th class="p-2">Pts</th></tr></thead><tbody>${rows.map(x=>`<tr class="border-b border-slate-800"><td class="p-2 font-bold">${x.posicion}</td><td class="p-2 font-semibold">${esc(x.escuelaCodigo)}</td><td class="p-2 text-center">${x.PJ}</td><td class="p-2 text-center">${x.PG}</td><td class="p-2 text-center">${x.PE}</td><td class="p-2 text-center">${x.PP}</td><td class="p-2 text-center">${x.GF}</td><td class="p-2 text-center">${x.GC}</td><td class="p-2 text-center">${x.DG}</td><td class="p-2 text-center font-bold text-blue-300">${x.Pts}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function fencingPodium(r){
   const rd=r.resultadoDeportivo||{};
+  if (rd.tipo==='ESGRIMA_EQUIPOS' || rd.modalidad==='EQUIPOS' || r.modalidadCodigo==='EQUIPOS' || r.categoriaCodigo==='ESG_EQUIPOS') {
+    const teams=Array.isArray(rd.equipos)?rd.equipos:[];
+    const teamMap=Object.fromEntries(teams.map(t=>[String(t.lado||'').toUpperCase(),t]));
+    const q=rd.llave||{}, sf1=q.semifinal1||{}, sf2=q.semifinal2||{}, fin=q.final||{}, third=q.tercerPuesto||{};
+    const loser=m=>m?.ganador?(m.ganador===m.equipoA?m.equipoB:m.equipoA):'';
+    const resolve=token=>{if(!token)return '';if(teamMap[token])return token;if(token==='WIN_SF1')return sf1.ganador||'';if(token==='WIN_SF2')return sf2.ganador||'';if(token==='LOSER_SF1')return loser(sf1);if(token==='LOSER_SF2')return loser(sf2);return '';};
+    const finalA=resolve(fin.equipoA), finalB=resolve(fin.equipoB), winner=resolve(fin.ganador);
+    if(!winner||!finalA||!finalB||!teamMap[winner])return [];
+    const silver=winner===finalA?finalB:finalA;
+    const podium=[{posicion:1,escuelaCodigo:teamMap[winner]?.escuelaCodigo},{posicion:2,escuelaCodigo:teamMap[silver]?.escuelaCodigo}];
+    const thirdA=resolve(third.equipoA),thirdB=resolve(third.equipoB),thirdWinner=resolve(third.ganador);
+    if(thirdWinner&&thirdA&&thirdB&&teamMap[thirdWinner])podium.push({posicion:3,escuelaCodigo:teamMap[thirdWinner]?.escuelaCodigo});
+    return podium.filter(x=>x.escuelaCodigo);
+  }
+  // Si el resultado ya tiene medallas consolidadas, usarlas para pintar el podio.
+  // Esto conserva los dos bronces aunque una versión anterior haya serializado
+  // las semifinales en otra rama del cuadro.
+  const storedMedals=Array.isArray(r.medallas)?r.medallas:[];
+  if(storedMedals.length && (rd.tipo==='ESGRIMA_ELIMINACION_DIRECTA' || rd.modalidad==='ELIMINACION_DIRECTA')) {
+    const posFor={ORO:1,GOLD:1,PLATA:2,SILVER:2,BRONCE:3,BRONZE:3};
+    const fromStored=storedMedals.map(m=>({
+      posicion:Number(m.posicion)||posFor[String(m.tipo||m.tipoMedalla||'').toUpperCase()]||0,
+      escuelaCodigo:m.escuelaCodigo||'', nombre:m.nombre||'', participanteId:m.participanteId||null
+    })).filter(x=>x.posicion>=1&&x.posicion<=3&&x.escuelaCodigo);
+    // Mostrar los dos bronces como puestos 3 y 4 en el podio por competencia.
+    const bronzeRows=fromStored.filter(x=>x.posicion===3);
+    if(fromStored.some(x=>x.posicion===1)&&fromStored.some(x=>x.posicion===2)&&bronzeRows.length>=2){
+      bronzeRows.forEach((x,i)=>{x.posicion=i===0?3:4;});
+      return fromStored.sort((a,b)=>a.posicion-b.posicion);
+    }
+  }
   const ps=Array.isArray(rd.participantes)?rd.participantes:[];
   const map=Object.fromEntries(ps.map(p=>[p.id,p]));
-  const fin=rd.cuadro?.final||{}, third=rd.cuadro?.tercerPuesto||{};
-  if(!fin.ganador||!fin.participanteA||!fin.participanteB||!third.ganador||!third.participanteA||!third.participanteB) return [];
+  const cuadro=rd.cuadro||{}, combates=cuadro.combates||{};
+  const pickBout=(primary,...fallbacks)=>primary&&primary.ganador?primary:(fallbacks.find(x=>x&&x.ganador)||primary||{});
+  const fin=pickBout(cuadro.final,combates.final), third=pickBout(cuadro.tercerPuesto,combates.third,combates.tercerPuesto), sf1=pickBout(cuadro.semifinal1,combates.sf1,combates.semifinal1), sf2=pickBout(cuadro.semifinal2,combates.sf2,combates.semifinal2);
+  if(!fin.ganador||!fin.participanteA||!fin.participanteB) return [];
   const silverId=fin.ganador===fin.participanteA?fin.participanteB:fin.participanteA;
-  return [
-    {posicion:1,...(map[fin.ganador]||{} )},
-    {posicion:2,...(map[silverId]||{} )},
-    {posicion:3,...(map[third.ganador]||{} )}
-  ].filter(x=>x.escuelaCodigo);
+  const podium=[{posicion:1,...(map[fin.ganador]||{})},{posicion:2,...(map[silverId]||{})}];
+  // Esgrima individual entrega dos bronces: a los dos perdedores de semifinal,
+  // incluso si existe un objeto de tercer puesto heredado de versiones anteriores.
+  [sf1,sf2].forEach((m,index)=>{
+    if(!m?.ganador||!m?.participanteA||!m?.participanteB) return;
+    const loserId=m.ganador===m.participanteA?m.participanteB:m.participanteA;
+    if(loserId) podium.push({posicion:index===0?3:4,...(map[loserId]||{})});
+  });
+  return podium.filter(x=>x.escuelaCodigo);
 }
 function fencingBracketStatus(r){
-  const rd=r.resultadoDeportivo||{}, q=rd.cuadro||{};
+  const rd=r.resultadoDeportivo||{};
   const done=x=>Boolean(x?.ganador);
-  const complete=done(q.final)&&done(q.tercerPuesto);
+  if (rd.tipo==='ESGRIMA_EQUIPOS' || rd.modalidad==='EQUIPOS' || r.modalidadCodigo==='EQUIPOS' || r.categoriaCodigo==='ESG_EQUIPOS') {
+    const q=rd.llave||{};
+    const complete=done(q.final); // El tercer puesto es opcional; solo entrega bronce si se registra.
+    return {sf1:done(q.semifinal1),sf2:done(q.semifinal2),final:done(q.final),third:done(q.tercerPuesto),complete};
+  }
+  const q=rd.cuadro||{};
+  // En individual basta con completar semifinales y final: los dos perdedores
+  // de semifinal reciben bronce cuando no hay combate por el tercer puesto.
+  const complete=done(q.final)&&done(q.semifinal1)&&done(q.semifinal2);
   return {sf1:done(q.semifinal1),sf2:done(q.semifinal2),final:done(q.final),third:done(q.tercerPuesto),complete};
 }
 function tennisModalityIsClosed(r){
@@ -207,9 +268,29 @@ function tennisRanking(r){
   // El podio se calcula al cerrar la categoría/modalidad, no al terminar toda la disciplina.
   // La marca de cierre puede estar en el documento del resultado o dentro de resultadoDeportivo.
   if(!matches.some(tennisModalityIsClosed)) return [];
+  const isDoubles=['DOBLES','DOBLES MIXTOS'].includes(String(matches[0]?.resultadoDeportivo?.modalidad||'').toUpperCase());
+  if(isDoubles){
+    // Si hay cuadro eliminatorio, prioriza la final y las semifinales para no
+    // ordenar el podio simplemente por partidos ganados en todas las rondas.
+    const round=m=>String(m?.resultadoDeportivo?.ronda||m?.resultadoDeportivo?.faseCompetencia||'').toUpperCase();
+    const winnerSchool=m=>{const rd=m?.resultadoDeportivo||{};const side=String(rd.ganadorLado||'').toUpperCase();return rd.escuelaGanadora||(side==='A'?rd.parejaA?.escuelaCodigo:side==='B'?rd.parejaB?.escuelaCodigo:'')||'';};
+    const finalMatch=matches.find(m=>round(m)==='FINAL'&&winnerSchool(m));
+    const semifinals=matches.filter(m=>round(m)==='SEMIFINAL'&&winnerSchool(m));
+    if(finalMatch){
+      const fr=finalMatch.resultadoDeportivo, fw=winnerSchool(finalMatch), fa=fr.parejaA?.escuelaCodigo||fr.jugadorA?.escuelaCodigo||'', fb=fr.parejaB?.escuelaCodigo||fr.jugadorB?.escuelaCodigo||'', fl=fw===fa?fb:fa;
+      const podium=[];if(fw)podium.push(fw);if(fl&&fl!==fw)podium.push(fl);
+      if(semifinals.length>=2){for(const sm of semifinals){const rd=sm.resultadoDeportivo, sw=winnerSchool(sm), a=rd.parejaA?.escuelaCodigo||rd.jugadorA?.escuelaCodigo||'', b=rd.parejaB?.escuelaCodigo||rd.jugadorB?.escuelaCodigo||'', loser=sw===a?b:a;if(loser&&!podium.includes(loser))podium.push(loser);}}
+      const orderedSchools=podium.map((school,i)=>({key:String(school).toUpperCase(),nombre:String(school),escuelaCodigo:school,posicion:i<2?i+1:3,partidos:0,ganados:0,setsGanados:0,setsJugados:0,gamesGanados:0,gamesJugados:0}));
+      return orderedSchools;
+    }
+    const teams=new Map();
+    const ensureTeam=(school)=>{if(!school)return null;const key=String(school).trim().toUpperCase();if(!teams.has(key))teams.set(key,{key,nombre:String(school),escuelaCodigo:school,partidos:0,ganados:0,setsGanados:0,setsJugados:0,gamesGanados:0,gamesJugados:0});return teams.get(key);};
+    for(const m of matches){const rd=m.resultadoDeportivo||{};const a=ensureTeam(rd.parejaA?.escuelaCodigo||rd.jugadorA?.escuelaCodigo),b=ensureTeam(rd.parejaB?.escuelaCodigo||rd.jugadorB?.escuelaCodigo);if(!a||!b)continue;const side=String(rd.ganadorLado||(['A','B'].includes(rd.ganador)?rd.ganador:'')).toUpperCase();const winnerSchool=rd.escuelaGanadora||(!side?'':side==='A'?a.escuelaCodigo:b.escuelaCodigo);if(!winnerSchool)continue;a.partidos++;b.partidos++;const win=String(winnerSchool).toUpperCase()===String(a.escuelaCodigo).toUpperCase()?a:b;win.ganados++;for(const set of rd.sets||[]){const ga=Number(set.gamesA||0),gb=Number(set.gamesB||0);if(!(ga||gb))continue;a.setsJugados++;b.setsJugados++;a.gamesGanados+=ga;b.gamesGanados+=gb;a.gamesJugados+=ga+gb;b.gamesJugados+=ga+gb;if(ga>gb)a.setsGanados++;else if(gb>ga)b.setsGanados++;}}
+    const list=[...teams.values()],pct=(n,d)=>d?n/d:0;list.sort((a,b)=>b.ganados-a.ganados||pct(b.setsGanados,b.setsJugados)-pct(a.setsGanados,a.setsJugados)||pct(b.gamesGanados,b.gamesJugados)-pct(a.gamesGanados,a.gamesJugados)||a.nombre.localeCompare(b.nombre));return list.map((p,i)=>({...p,posicion:i+1}));
+  }
   const players=new Map();
   const ensure=(p)=>{if(!p?.escuelaCodigo||!p?.nombre)return null;const key=`${String(p.escuelaCodigo).toUpperCase()}|${String(p.nombre).trim().toUpperCase()}`;if(!players.has(key))players.set(key,{key,nombre:p.nombre,escuelaCodigo:p.escuelaCodigo,partidos:0,ganados:0,setsGanados:0,setsJugados:0,gamesGanados:0,gamesJugados:0});return players.get(key)};
-  for(const m of matches){const rd=m.resultadoDeportivo||{},a=ensure(rd.jugadorA),b=ensure(rd.jugadorB);if(!a||!b||!['A','B'].includes(rd.ganador))continue;a.partidos++;b.partidos++;const winner=rd.ganador==='A'?a:b;winner.ganados++;for(const set of rd.sets||[]){const ga=Number(set.gamesA||0),gb=Number(set.gamesB||0);if(!(ga||gb))continue;a.setsJugados++;b.setsJugados++;a.gamesGanados+=ga;b.gamesGanados+=gb;a.gamesJugados+=ga+gb;b.gamesJugados+=ga+gb;if(ga>gb)a.setsGanados++;else if(gb>ga)b.setsGanados++;}}
+  for(const m of matches){const rd=m.resultadoDeportivo||{},a=ensure(rd.jugadorA),b=ensure(rd.jugadorB);const side=String(rd.ganador||'').trim().toUpperCase();const winnerSide=(side==='A'||side==='LOCAL'||side==='JUGADOR A')?'A':(side==='B'||side==='VISITANTE'||side==='JUGADOR B')?'B':'';if(!a||!b||!winnerSide)continue;a.partidos++;b.partidos++;const winner=winnerSide==='A'?a:b;winner.ganados++;for(const set of rd.sets||[]){const ga=Number(set.gamesA||0),gb=Number(set.gamesB||0);if(!(ga||gb))continue;a.setsJugados++;b.setsJugados++;a.gamesGanados+=ga;b.gamesGanados+=gb;a.gamesJugados+=ga+gb;b.gamesJugados+=ga+gb;if(ga>gb)a.setsGanados++;else if(gb>ga)b.setsGanados++;}}
   const list=[...players.values()];
   const pct=(n,d)=>d?n/d:0;
   list.sort((a,b)=>b.ganados-a.ganados||pct(b.setsGanados,b.setsJugados)-pct(a.setsGanados,a.setsJugados)||pct(b.gamesGanados,b.gamesJugados)-pct(a.gamesGanados,a.gamesJugados)||a.nombre.localeCompare(b.nombre));
@@ -223,48 +304,36 @@ function tennisRanking(r){
   }
   return list.map((p,i)=>({...p,posicion:i+1}));
 }
-function orientationRanking(r){
-  // Orientación Militar se consolida por competencia: algunas versiones guardan
-  // una planilla completa y otras guardan un registro por participante.
-  const key=String(r.competenciaCodigo||r.competenciaId||r.id||'');
-  const same=allResults().filter(x=>discipline(x)==='Orientación Militar' &&
-    (String(x.competenciaCodigo||x.competenciaId||x.id||'')===key ||
-     (!key && category(x)===category(r) && dateOf(x)===dateOf(r))));
-  const pool=[];
-  for(const item of (same.length?same:[r])){
-    const rd=item.resultadoDeportivo||{};
-    const sources=[rd.participantes,rd.clasificacion,item.clasificacion,item.resultados,item.resultadoDeportivo?.resultados];
-    for(const arr of sources) if(Array.isArray(arr)) for(const p of arr) pool.push(p);
-    // Compatibilidad con documentos que guardan una fila directamente en la raíz.
-    if(item.nombre||item.participante||item.tiempoDefinitivo||item.resultado){
-      pool.push({nombre:item.nombre||item.participante,escuelaCodigo:item.escuelaCodigo||item.escuela,
-        tiempoDefinitivo:item.tiempoDefinitivo||item.resultado,resultado:item.resultado,posicion:item.posicion,estado:item.estado});
-    }
-  }
-  const dedup=new Map();
-  for(const p of pool){
-    const name=String(p.nombre||p.participante||p.nombreParticipante||'').trim();
-    const school=String(p.escuelaCodigo||p.escuela||p.codigoEscuela||'').trim().toUpperCase();
-    const time=String(p.tiempoDefinitivo||p.resultado||p.marcaTiempo||p.tiempo||'').trim();
-    const status=String(p.estado||'FINAL').trim().toUpperCase();
-    const pos=Number(p.posicion||p.pos||0);
-    if(!name||!school||['DNF','DNS','DSQ','DQ','DESCALIFICADO','NO FINALIZO','NO PRESENTADO'].includes(status)) continue;
-    if(!time && !(pos>0)) continue;
-    const k=school+'|'+name.toLocaleUpperCase();
-    if(!dedup.has(k)) dedup.set(k,{...p,nombre:name,escuelaCodigo:school,tiempoDefinitivo:time,posicion:pos,estado:status});
-  }
-  const rows=[...dedup.values()];
-  const hasTimes=rows.some(p=>p.tiempoDefinitivo);
-  rows.sort((a,b)=>{
-    if(hasTimes){const ta=timeToMs(a.tiempoDefinitivo),tb=timeToMs(b.tiempoDefinitivo);if(ta!==tb)return ta-tb;}
-    const pa=a.posicion>0?a.posicion:Number.MAX_SAFE_INTEGER,pb=b.posicion>0?b.posicion:Number.MAX_SAFE_INTEGER;
-    return pa-pb || a.nombre.localeCompare(b.nombre);
-  });
-  return rows.map((p,i)=>({...p,posicion:i+1,resultado:p.tiempoDefinitivo||p.resultado||''}));
-}
 function individualRanking(r){
   const rd=r.resultadoDeportivo||{}; const d=discipline(r);
   if(d==='Tenis' && rd.tipo==='TENIS') return tennisRanking(r);
+  if(d==='Pentatlón' && rd.tipo==='PENTATLON' && Array.isArray(rd.participantes)) {
+    const test=String(rd.tipoPrueba||'').toUpperCase();
+    const timed=['PISTA','NATACION','CROSS','RELEVOS'].includes(test);
+    const distance=test==='GRANADA';
+    const groups=new Map();
+    rd.participantes.filter(p=>p?.escuelaCodigo && (p.nombre||p.escuelaCodigo)).forEach(p=>{
+      const sex=String(p.sexo||'').trim().toUpperCase()||'SIN_RAMA';
+      if(!groups.has(sex)) groups.set(sex,[]);
+      groups.get(sex).push(p);
+    });
+    const ranked=[];
+    for(const [sex,players] of groups){
+      let ordered=[...players];
+      if(timed) ordered=ordered.filter(p=>Number.isFinite(timeToMs(p.resultado))&&String(p.resultado||'').trim()!=='').sort((a,b)=>timeToMs(a.resultado)-timeToMs(b.resultado));
+      else if(distance) ordered=ordered.filter(p=>String(p.resultado??'').trim()!==''&&Number.isFinite(Number(p.resultado))).sort((a,b)=>Number(b.resultado)-Number(a.resultado));
+      else if(test==='TIRO') ordered=ordered.sort((a,b)=>Number(b.resultado||0)-Number(a.resultado||0));
+      else ordered=ordered.sort((a,b)=>Number(a.posicion||999)-Number(b.posicion||999));
+      let last=null,pos=0;
+      ordered.forEach((p,i)=>{
+        const metric=timed?timeToMs(p.resultado):distance||test==='TIRO'?Number(p.resultado):Number(p.posicion||i+1);
+        if(i===0||metric!==last) pos=i+1;
+        ranked.push({...p,sexo:p.sexo||sex,posicion:pos});
+        last=metric;
+      });
+    }
+    return ranked;
+  }
   if(d==='Taekwondo' && rd.tipo==='TAEKWONDO' && Array.isArray(rd.combates)) {
     const bouts=rd.combates.filter(b=>['A','B'].includes(String(b.ganador||'').toUpperCase()));
     const groups=new Map();
@@ -277,12 +346,29 @@ function individualRanking(r){
     const out=[]; for(const players of groups.values()){ const ranked=[...players.values()].sort((a,b)=>b.ganados-a.ganados||a.perdidos-b.perdidos||a.nombre.localeCompare(b.nombre)); ranked.forEach((p,i)=>out.push({...p,posicion:i+1})); }
     return out;
   }
-  if(Array.isArray(r.clasificacion)&&r.clasificacion.some(x=>Number(x.posicion)>0)) return [...r.clasificacion].filter(x=>Number(x.posicion)>0).sort((a,b)=>Number(a.posicion)-Number(b.posicion));
+  // Recalcular esgrima desde la llave técnica: registros antiguos pueden guardar ganadores simbólicos.
   if(d==='Esgrima') return fencingPodium(r);
+  if(Array.isArray(r.clasificacion)&&r.clasificacion.some(x=>Number(x.posicion)>0)) return [...r.clasificacion].filter(x=>Number(x.posicion)>0).sort((a,b)=>Number(a.posicion)-Number(b.posicion));
   if(d==='Tiro Deportivo'&&Array.isArray(rd.participantes)) return [...rd.participantes].sort((a,b)=>Number(b.total||0)-Number(a.total||0)||Number(b.xCentros||0)-Number(a.xCentros||0)).map((p,i)=>({...p,posicion:i+1}));
-  if(d==='Natación'&&Array.isArray(rd.participantes)) { const valid=rd.participantes.filter(p=>p.tiempoFinal||Number(p.posicion)>0); return [...valid].sort((a,b)=>Number(a.posicion)>0&&Number(b.posicion)>0?Number(a.posicion)-Number(b.posicion):timeToMs(a.tiempoFinal)-timeToMs(b.tiempoFinal)).map((p,i)=>({...p,posicion:Number(p.posicion)>0?Number(p.posicion):i+1,resultado:p.tiempoFinal||p.resultado||''})); }
-  if(d==='Orientación Militar') return orientationRanking(r);
+  if(d==='Natación'&&Array.isArray(rd.participantes)){ const valid=rd.participantes.filter(p=>String(p.estado||'FINAL').toUpperCase()==='FINAL'&&String(p.tiempoFinal||'').trim()&&Number.isFinite(timeToMs(p.tiempoFinal))); const grouped=new Map(); valid.forEach(p=>{const sex=String(p.sexo||'SIN_RAMA').toUpperCase();if(!grouped.has(sex))grouped.set(sex,[]);grouped.get(sex).push(p)});const out=[];for(const [sexo,players] of grouped){players.sort((a,b)=>timeToMs(a.tiempoFinal)-timeToMs(b.tiempoFinal));let last=null,pos=0;players.forEach((p,i)=>{const metric=timeToMs(p.tiempoFinal);if(i===0||metric!==last)pos=i+1;out.push({...p,sexo,posicion:pos});last=metric;});}return out.sort((a,b)=>a.posicion-b.posicion||timeToMs(a.tiempoFinal)-timeToMs(b.tiempoFinal));}
+  if(d==='Orientación Militar'&&Array.isArray(rd.participantes)) { const out=[]; for(const gender of ['MASCULINO','FEMENINO']) [...rd.participantes].filter(p=>String(p.estado||'FINAL').toUpperCase()!=='DESCALIFICADO'&&(p.tiempoDefinitivo||p.tiempoBruto)&&String(p.genero||p.sexo||'').trim().toUpperCase()===gender).sort((a,b)=>timeToMs(a.tiempoDefinitivo||a.tiempoBruto)-timeToMs(b.tiempoDefinitivo||b.tiempoBruto)).forEach((p,i)=>out.push({...p,genero:gender,posicion:i<3?i+1:null})); return out; }
   if(d==='Atletismo'&&Array.isArray(rd.participantes)){
+    const noRank=['DQ','DNF','DNS','NM'];
+    const parseMark=(mark,fmt)=>{const raw=String(mark??'').trim();let m;
+      if(fmt==='METROS'){if(!/^\d+(?:[.,]\d{1,3})?$/.test(raw))return null;const v=Number(raw.replace(',','.'));return v>0?{kind:'DIST',value:v}:null;}
+      if(fmt==='SS:MMM'){m=raw.match(/^([0-5]?\d)[:.,](\d{3})$/);return m?{kind:'TIME',value:Number(m[1])*1000+Number(m[2])}:null;}
+      if(fmt==='MM:SS:MMM'){m=raw.match(/^(\d{1,3}):([0-5]?\d)[:.,](\d{3})$/);return m?{kind:'TIME',value:Number(m[1])*60000+Number(m[2])*1000+Number(m[3])}:null;}
+      return null;};
+    const active=rd.participantes.filter(p=>!noRank.includes(String(p.estado||'FINAL').toUpperCase())&&p.marcaTiempo);
+    if(active.length&&active.every(p=>p.formatoMarca)){
+      const out=[];
+      for(const kind of ['TIME','DIST']){
+        const rows=active.map(p=>({p,v:parseMark(p.marcaTiempo,p.formatoMarca)})).filter(x=>x.v&&x.v.kind===kind).sort((x,y)=>kind==='TIME'?x.v.value-y.v.value:y.v.value-x.v.value);
+        let last=null,pos=0; rows.forEach((x,i)=>{if(i===0||x.v.value!==last)pos=i+1;out.push({...x.p,posicion:pos});last=x.v.value;});
+      }
+      return out.sort((x,y)=>x.posicion-y.posicion);
+    }
+    // Registros anteriores sin formato: se conserva el cálculo original.
     const isField=String(rd.modalidad||'').toUpperCase()==='CAMPO';
     const valid=rd.participantes.filter(p=>!['DQ','DNF','DNS','NM'].includes(p.estado)&&p.marcaTiempo);
     return [...valid].sort((a,b)=>isField?compareMarksDesc(a.marcaTiempo,b.marcaTiempo):compareTimesAsc(a.marcaTiempo,b.marcaTiempo)).map((p,i)=>({...p,posicion:i+1}));
@@ -292,38 +378,177 @@ function individualRanking(r){
 function timeToMs(v){const s=String(v||'').trim();const parts=s.split(':').map(Number);if(parts.some(Number.isNaN))return Number.POSITIVE_INFINITY;if(parts.length===3)return parts[0]*3600000+parts[1]*60000+parts[2]*1000;if(parts.length===2)return parts[0]*60000+parts[1]*1000;return Number(s)||Number.POSITIVE_INFINITY}
 function compareTimesAsc(a,b){return timeToMs(a)-timeToMs(b)}
 function compareMarksDesc(a,b){const na=Number(String(a).replace(',','.')),nb=Number(String(b).replace(',','.'));if(Number.isFinite(na)&&Number.isFinite(nb))return nb-na;return String(b).localeCompare(String(a))}
+function tennisPodiumTitle(r){
+  const rd=r?.resultadoDeportivo||{};
+  const raw=String(rd.modalidad||r?.modalidadCodigo||r?.modalidad||'').trim().toUpperCase();
+  const modality=raw.includes('MIXT')?'Dobles mixtos':(raw.includes('DOBLES')?'Dobles':'Sencillos');
+  const cat=String(r?.categoriaCodigo||r?.categoria||rd.categoriaCodigo||'').trim().toUpperCase();
+  const genderRaw=String(r?.genero||r?.sexo||rd.genero||rd.sexo||'').trim().toUpperCase();
+  let gender='';
+  if(cat.includes('FEMEN')||genderRaw==='FEMENINO'||genderRaw==='F') gender='femenino';
+  else if(cat.includes('MASCUL')||genderRaw==='MASCULINO'||genderRaw==='M') gender='masculino';
+  else if(cat.includes('MIXT')||genderRaw==='MIXTO') gender='mixto';
+  else if(modality==='Dobles mixtos') gender='mixto';
+  return `Tenis · ${modality}${gender?` ${gender}`:''}`;
+}
+
 function individualPodiumHtml(r){
   const rank=individualRanking(r);
   const rd=r.resultadoDeportivo||{}; const d=discipline(r);
+  if(d==='Pentatlón' && rd.tipo==='PENTATLON' && Array.isArray(rd.participantes)) {
+    const test=String(rd.tipoPrueba||'').toUpperCase();
+    const timed=['PISTA','NATACION','CROSS','RELEVOS'].includes(test);
+    const distance=test==='GRANADA';
+    const groups=new Map();
+    rd.participantes.filter(p=>p?.escuelaCodigo && (p.nombre||p.escuelaCodigo)).forEach(p=>{
+      const sex=String(p.sexo||'').trim().toUpperCase()||'SIN_RAMA';
+      if(!groups.has(sex)) groups.set(sex,[]); groups.get(sex).push(p);
+    });
+    const sections=[];
+    for(const [sex,players] of groups){
+      let ordered=[...players];
+      if(timed) ordered=ordered.filter(p=>String(p.resultado||'').trim()!==''&&Number.isFinite(timeToMs(p.resultado))).sort((a,b)=>timeToMs(a.resultado)-timeToMs(b.resultado));
+      else if(distance) ordered=ordered.filter(p=>String(p.resultado??'').trim()!==''&&Number.isFinite(Number(p.resultado))).sort((a,b)=>Number(b.resultado)-Number(a.resultado));
+      else if(test==='TIRO') ordered=ordered.sort((a,b)=>Number(b.resultado||0)-Number(a.resultado||0));
+      else ordered=ordered.sort((a,b)=>Number(a.posicion||999)-Number(b.posicion||999));
+      if(!ordered.length) continue;
+      const label=sex==='MASCULINO'?'Masculino':sex==='FEMENINO'?'Femenino':sex==='MIXTO'?'Mixto':'Rama sin especificar';
+      let lastMetric=null, computedPos=0;
+      const rows=ordered.map((p,i)=>{
+        const metric=timed?timeToMs(p.resultado):distance||test==='TIRO'?Number(p.resultado):Number(p.posicion||i+1);
+        if(i===0||metric!==lastMetric) computedPos=i+1;
+        const pos=computedPos; lastMetric=metric;
+        return {...p,__computedPosition:pos};
+      }).filter(p=>p.__computedPosition<=3).slice(0,3).map((p,i)=>{
+        const pos=p.__computedPosition, medal=pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':'';
+        const score=String(p.resultado??'').trim();
+        const suffix=timed&&score?` · ${esc(score)}`:distance&&score?` · ${esc(score)} m`:score?` · ${esc(score)}`:'';
+        return `<div>${medal} <b>${esc(p.escuelaCodigo)}</b> ${esc(p.nombre||'')} <span class="text-slate-300">· ${pos}.º puesto${suffix}</span></div>`;
+      }).join('');
+      sections.push(`<section class="mb-3 last:mb-0"><div class="text-xs font-bold text-blue-300 mb-2">${label}</div><div class="space-y-1">${rows}</div></section>`);
+    }
+    return sections.length?`<div class="space-y-3">${sections.join('')}</div>`:'<span class="text-slate-500">Podio pendiente: registre participantes con resultado válido y sexo para separar los podios masculino y femenino.</span>';
+  }
+  if(d==='Orientación Militar' && Array.isArray(rd.participantes)){
+    const valid=rd.participantes.filter(p=>String(p.estado||'FINAL').toUpperCase()!=='DESCALIFICADO' && (p.tiempoDefinitivo||p.tiempoBruto));
+    if(!valid.length) return '<span class="text-slate-500">Podio pendiente: registre participantes con tiempo definitivo y estado FINAL.</span>';
+    const genders=[['MASCULINO',valid.filter(p=>String(p.genero||p.sexo||'').trim().toUpperCase()==='MASCULINO')],['FEMENINO',valid.filter(p=>String(p.genero||p.sexo||'').trim().toUpperCase()==='FEMENINO')]];
+    const sections=genders.filter(([,players])=>players.length).map(([label,players])=>{
+      const ordered=[...players].sort((a,b)=>timeToMs(a.tiempoDefinitivo||a.tiempoBruto)-timeToMs(b.tiempoDefinitivo||b.tiempoBruto));
+      return `<section class="mb-3 last:mb-0"><div class="text-xs font-bold text-blue-300 mb-2">${esc(label)}</div><div class="space-y-1">${ordered.slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')} <span class="text-slate-300">· ${esc(x.tiempoDefinitivo||x.tiempoBruto||'Tiempo sin registrar')}</span></div>`).join('')}</div></section>`;
+    }).join('');
+    const unknown=valid.filter(p=>!['MASCULINO','FEMENINO'].includes(String(p.genero||p.sexo||'').trim().toUpperCase()));
+    return `<div class="space-y-2">${sections}${unknown.length?`<div class="text-xs text-amber-300">${unknown.length} participante(s) sin género válido; no se incluyen en los podios hasta completar ese dato.</div>`:''}</div>`;
+  }
+  if(d==='Esgrima' && rd.tipo==='ESGRIMA_ELIMINACION_DIRECTA'){
+    const st=fencingBracketStatus(r), podium=fencingPodium(r);
+    const rows=podium.map(x=>{
+      const pos=Number(x.posicion);
+      const medal=pos===1?'🥇':pos===2?'🥈':(pos===3||pos===4)?'🥉':'';
+      const place=pos===1?'1.º puesto':pos===2?'2.º puesto':(pos===3||pos===4)?'3.º puesto':`${pos}.º puesto`;
+      return `<div>${medal} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')} <span class="text-slate-400">· ${place}</span></div>`;
+    }).join('');
+    return `<div class="space-y-2"><div class="text-xs text-slate-300">⚔️ Eliminación directa individual · ${esc(rd.arma||'')}</div>${rows?`<div class="space-y-1 mt-2">${rows}</div>`:''}</div>`;
+  }
+  if(rank.length) return rank.slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')}</div>`).join('');
   if(d==='Taekwondo' && rd.tipo==='TAEKWONDO'){
     if(!rank.length) return '<span class="text-slate-500">Registre los ganadores de los combates para calcular la clasificación.</span>';
     const groups=new Map(); rank.forEach(p=>{const k=`${p.sexo||'Sin rama'} · ${p.categoriaPeso||'Peso sin definir'}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(p);});
     return [...groups.entries()].map(([label,players])=>`<div class="mb-3"><div class="text-xs font-bold text-blue-300 mb-1">${esc(label)}</div>${players.slice(0,3).map((p,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(p.escuelaCodigo)}</b> ${esc(p.nombre)} <span class="text-slate-400">(${p.ganados} victoria(s))</span></div>`).join('')}</div>`).join('');
   }
   if(d==='Tenis' && rd.tipo==='TENIS'){
-    const a=rd.jugadorA||{}, b=rd.jugadorB||{};
-    const sets=(Array.isArray(rd.sets)?rd.sets:[]).filter(x=>x && (Number(x.gamesA||0)>0 || Number(x.gamesB||0)>0));
-    const setsA=sets.filter(x=>Number(x.gamesA||0)>Number(x.gamesB||0)).length;
-    const setsB=sets.filter(x=>Number(x.gamesB||0)>Number(x.gamesA||0)).length;
-    const score=sets.map((x,i)=>`S${i+1} ${Number(x.gamesA||0)}-${Number(x.gamesB||0)}`).join(' · ')||'Marcador pendiente';
-    const side=String(rd.ganador||'').toUpperCase();
-    const winner=side==='A'?a:side==='B'?b:null;
-    const loser=side==='A'?b:side==='B'?a:null;
-    const match=`<div class="space-y-1"><div class="font-semibold text-white">${esc(a.escuelaCodigo||'—')} · ${esc(a.nombre||'Cadete A')} <span class="text-slate-400">vs</span> ${esc(b.escuelaCodigo||'—')} · ${esc(b.nombre||'Cadete B')}</div><div class="text-slate-300">${esc(score)}</div><div class="text-slate-400">Sets ganados: ${setsA} - ${setsB}</div>${winner&&loser?`<div class="text-emerald-300">Ganador: ${esc(winner.escuelaCodigo||'')} · ${esc(winner.nombre||'')}</div><div class="text-rose-300">Perdedor: ${esc(loser.escuelaCodigo||'')} · ${esc(loser.nombre||'')}</div>`:`<div class="text-amber-300">Ganador pendiente de confirmar</div>`}</div>`;
-    const podium=rank.length?`<div class="mt-3 border-t border-slate-700 pt-2"><div class="text-xs font-bold text-blue-300 mb-1">Podio de la categoría/modalidad</div>${rank.slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')}</div>`).join('')}</div>`:'<div class="mt-2 text-amber-300">Podio pendiente: se calcula únicamente al cerrar la categoría/modalidad.</div>';
-    return match+podium;
+    const matches=tennisGroupResults(r);
+    const matchLines=matches.map(m=>{
+      const x=m.resultadoDeportivo||{}, a=x.jugadorA||{}, b=x.jugadorB||{}, pa=x.parejaA||{}, pb=x.parejaB||{};
+      const doubles=['DOBLES','DOBLES MIXTOS'].includes(String(x.modalidad||'').toUpperCase());
+      const namesA=doubles?((pa.jugadores||[]).map(j=>j.nombre).filter(Boolean).join(' / ')||a.nombre||'Pareja A'):(a.nombre||'Jugador A');
+      const namesB=doubles?((pb.jugadores||[]).map(j=>j.nombre).filter(Boolean).join(' / ')||b.nombre||'Pareja B'):(b.nombre||'Jugador B');
+      const schoolA=pa.escuelaCodigo||a.escuelaCodigo||'—', schoolB=pb.escuelaCodigo||b.escuelaCodigo||'—';
+      const sets=(x.sets||[]).filter(t=>t && (t.gamesA!==undefined||t.gamesB!==undefined) && (String(t.gamesA??'')!==''||String(t.gamesB??'')!=='' )).map((t,i)=>`Set ${i+1}: ${Number(t.gamesA||0)}-${Number(t.gamesB||0)}`).join(' · ');
+      const completed=(x.sets||[]).filter(t=>t && (Number(t.gamesA||0)>0||Number(t.gamesB||0)>0));
+      const winsA=completed.filter(t=>Number(t.gamesA||0)>Number(t.gamesB||0)).length, winsB=completed.filter(t=>Number(t.gamesB||0)>Number(t.gamesA||0)).length;
+      const rawSide=String(x.ganadorLado||(['A','B'].includes(String(x.ganador||'').toUpperCase())?x.ganador:'')).trim().toUpperCase();
+      const winnerSide=rawSide==='A'||rawSide==='B'?rawSide:(winsA>=2?'A':winsB>=2?'B':'');
+      const winner=winnerSide==='A'?(doubles?schoolA:`${schoolA} · ${namesA}`):winnerSide==='B'?(doubles?schoolB:`${schoolB} · ${namesB}`):'Pendiente de definir (marcador incompleto)';
+      const loser=winnerSide==='A'?(doubles?schoolB:`${schoolB} · ${namesB}`):winnerSide==='B'?(doubles?schoolA:`${schoolA} · ${namesA}`):'';
+      const scoreLine=completed.length?sets:'Sin marcador registrado';
+      const round=x.ronda||x.faseCompetencia||'';
+      const sideA=doubles?schoolA:`${schoolA} · ${namesA}`;
+      const sideB=doubles?schoolB:`${schoolB} · ${namesB}`;
+      return `<div class="${matches.length>1?'mb-3 pb-2 border-b border-slate-700 last:border-0':''}"><div class="font-semibold text-slate-100">${esc(sideA)} <span class="text-slate-500">vs</span> ${esc(sideB)}</div>${round?`<div class="text-slate-400 mt-1">Ronda: ${esc(round)}</div>`:''}<div class="text-slate-300 mt-1">Marcador: ${esc(scoreLine)}</div><div class="text-emerald-300 mt-1">Ganador del partido: ${esc(winner)}</div>${loser?`<div class="text-rose-300">Perdedor: ${esc(loser)}</div>`:''}</div>`;
+    }).join('');
+    const closed=tennisModalityIsClosed(r)||matches.some(tennisModalityIsClosed);
+    return `<div class="text-slate-300 space-y-1">${matchLines||'<div>No se encontraron partidos asociados a esta categoría/modalidad.</div>'}<div class="mt-2 text-amber-300 leading-tight">${closed?'Podio en cálculo: verifica los ganadores y los marcadores de todos los partidos.':'Podio pendiente: se calcula únicamente al cerrar la categoría/modalidad.'}</div></div>`;
   }
-  if(d==='Orientación Militar'){
-    if(!rank.length) return '<span class="text-amber-300">Podio pendiente: registre participantes con escuela y tiempo definitivo o posición.</span>';
-    const podium=rank.slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')} <span class="text-slate-400">${esc(x.resultado||'')}</span></div>`).join('');
-    return `<div class="text-xs font-bold text-blue-300 mb-1">Podio de Orientación Militar</div>${podium}${rank.length<3?'<div class="text-amber-300">Faltan participantes clasificados para completar el podio.</div>':''}`;
+  if(d==='Esgrima' && (rd.tipo==='ESGRIMA_EQUIPOS'||rd.modalidad==='EQUIPOS'||r.modalidadCodigo==='EQUIPOS')){
+    const st=fencingBracketStatus(r), teamPodium=fencingPodium(r);
+    if(teamPodium.length){const medal=['🥇','🥈','🥉'];const rows=teamPodium.map(x=>`<div>${medal[Number(x.posicion)-1]||''} <b>${esc(x.escuelaCodigo||'')}</b></div>`).join('');return `<div class="text-xs text-slate-300 mb-2">⚔️ Eliminación directa por equipos · ${esc(rd.arma||'')}</div><div class="grid grid-cols-2 gap-2 text-xs mb-2"><div>Semifinal 1: ${st.sf1?'✅':'⏳'}</div><div>Semifinal 2: ${st.sf2?'✅':'⏳'}</div><div>Final: ${st.final?'✅':'⏳'}</div><div>Tercer puesto: ${st.third?'✅':'⏳'}</div></div><div class="space-y-1">${rows}</div>${teamPodium.length<3?'<div class="text-amber-300 mt-2">Bronce pendiente: registre el tercer puesto.</div>':''}`;}
+    return `<div class="text-xs text-slate-300 mb-2">⚔️ Eliminación directa por equipos · ${esc(rd.arma||'')}</div><div class="grid grid-cols-2 gap-2 text-xs"><div>Semifinal 1: ${st.sf1?'✅':'⏳'}</div><div>Semifinal 2: ${st.sf2?'✅':'⏳'}</div><div>Final: ${st.final?'✅':'⏳'}</div><div>Tercer puesto: ${st.third?'✅':'⏳'}</div></div><div class="text-amber-300 mt-2">Podio pendiente de completar la llave.</div>`;
   }
-  if(rank.length) return rank.slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')}</div>`).join('');
   if(d==='Esgrima' && rd.tipo==='ESGRIMA_ELIMINACION_DIRECTA'){
-    const st=fencingBracketStatus(r);
-    return `<div class="space-y-2"><div class="text-xs text-slate-300">⚔️ Eliminación directa · ${esc(rd.arma||'')}</div><div class="grid grid-cols-2 gap-2 text-xs"><div>Semifinal 1: ${st.sf1?'✅':'⏳'}</div><div>Semifinal 2: ${st.sf2?'✅':'⏳'}</div><div>Final: ${st.final?'✅':'⏳'}</div><div>Tercer puesto: ${st.third?'✅':'⏳'}</div></div><div class="text-amber-300">${st.complete?'Podio listo':'Podio pendiente de completar el cuadro'}</div></div>`;
+    const st=fencingBracketStatus(r), individualPodium=fencingPodium(r);
+    const rows=individualPodium.map(x=>`<div>${Number(x.posicion)===1?'🥇':Number(x.posicion)===2?'🥈':'🥉'} <b>${esc(x.escuelaCodigo||'')}</b> ${esc(x.nombre||'')}</div>`).join('');
+    return `<div class="space-y-2"><div class="text-xs text-slate-300">⚔️ Eliminación directa individual · ${esc(rd.arma||'')}</div>${rows?`<div class="space-y-1 mt-2">${rows}</div>`:''}</div>`;
   }
   return '<span class="text-slate-500">Podio pendiente: registre todos los partidos de esta categoría/modalidad y marque «Cerrar modalidad y calcular podio» en el último partido.</span>';
+}
+
+function pentathlonIndividualOverall(results){
+  const totals=new Map();
+  (results||[]).forEach(r=>{
+    if(discipline(r)!=='Pentatlón') return;
+    const rd=r.resultadoDeportivo||{};
+    if(rd.tipo!=='PENTATLON'||String(rd.tipoPrueba||'').toUpperCase()==='RELEVOS') return;
+    (Array.isArray(rd.participantes)?rd.participantes:[]).forEach(p=>{
+      const nombre=String(p?.nombre||'').trim(), escuela=String(p?.escuelaCodigo||'').trim().toUpperCase();
+      if(!nombre||!escuela) return;
+      const key=`${escuela}|${nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ')}`;
+      if(!totals.has(key)) totals.set(key,{nombre,escuelaCodigo:escuela,sexo:p.sexo||'',puntosTotales:0,pruebas:0,detalle:[]});
+      const row=totals.get(key);
+      // Suma el puntaje del cadete para cada competencia individual registrada.
+      row.puntosTotales+=Number(p.puntosPrueba||0);
+      if(p.puntosPrueba!==undefined&&p.puntosPrueba!==null&&String(p.puntosPrueba)!=='') row.pruebas++;
+      row.detalle.push({prueba:rd.tipoPrueba||'GENERAL',puntos:Number(p.puntosPrueba||0)});
+    });
+  });
+  return [...totals.values()].sort((a,b)=>b.puntosTotales-a.puntosTotales||a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'}));
+}
+function pentathlonOverallHtml(results){
+  const ranking=pentathlonIndividualOverall(results);
+  if(!ranking.length) return '';
+  const rows=ranking.map((p,i)=>`<tr class=\"border-t border-slate-700\"><td class=\"px-2 py-2 text-center\">${i+1}</td><td class=\"px-2 py-2\"><b>${esc(p.escuelaCodigo)}</b></td><td class=\"px-2 py-2\">${esc(p.nombre)}</td><td class=\"px-2 py-2 text-right font-bold text-blue-300\">${p.puntosTotales.toLocaleString('es-CO',{maximumFractionDigits:2})}</td></tr>`).join('');
+  return `<div class=\"mt-3 mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3\"><div class=\"font-bold text-emerald-300 mb-1\">🏆 Podio general de Pentatlón individual</div><div class=\"text-xs text-slate-400 mb-2\">Acumulado de las pruebas individuales registradas. El mismo cadete se consolida usando nombre y escuela.</div><div class=\"overflow-x-auto\"><table class=\"w-full text-xs\"><thead><tr class=\"text-slate-400 text-left\"><th class=\"px-2 py-1\">Puesto</th><th class=\"px-2 py-1\">Escuela</th><th class=\"px-2 py-1\">Cadete</th><th class=\"px-2 py-1 text-right\">Puntos totales</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+
+function pentathlonTeamOverall(results){
+  const totals=new Map();
+  (results||[]).forEach(r=>{
+    if(discipline(r)!=='Pentatlón') return;
+    const rd=r.resultadoDeportivo||{};
+    const type=String(rd.tipoPrueba||'').toUpperCase();
+    const mode=String(rd.modalidadRegistro||rd.modalidad||'').toUpperCase();
+    // El acumulado por equipos se alimenta únicamente de resultados grupales/relevos.
+    if(rd.tipo!=='PENTATLON' || !(type==='RELEVOS' || mode==='EQUIPOS' || mode==='GRUPOS' || mode==='RELEVOS')) return;
+    (Array.isArray(rd.participantes)?rd.participantes:[]).forEach(p=>{
+      const school=String(p?.escuelaCodigo||'').trim().toUpperCase();
+      if(!school) return;
+      const points=Number(p?.puntosPrueba);
+      if(!Number.isFinite(points)) return;
+      if(!totals.has(school)) totals.set(school,{escuelaCodigo:school,puntosTotales:0,pruebas:0,detalle:[]});
+      const row=totals.get(school);
+      row.puntosTotales+=points;
+      row.pruebas++;
+      row.detalle.push({prueba:rd.tipoPrueba||'GRUPOS',puntos:points});
+    });
+  });
+  return [...totals.values()].sort((a,b)=>b.puntosTotales-a.puntosTotales||a.escuelaCodigo.localeCompare(b.escuelaCodigo,'es'));
+}
+function pentathlonTeamOverallHtml(results){
+  const ranking=pentathlonTeamOverall(results);
+  if(!ranking.length) return '';
+  const rows=ranking.map((p,i)=>`<tr class="border-t border-slate-700"><td class="px-2 py-2 text-center">${i+1}</td><td class="px-2 py-2"><b>${esc(p.escuelaCodigo)}</b></td><td class="px-2 py-2 text-right font-bold text-amber-300">${p.puntosTotales.toLocaleString('es-CO',{maximumFractionDigits:2})}</td></tr>`).join('');
+  return `<div class="mt-3 mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3"><div class="font-bold text-amber-300 mb-1">🏆 Podio general de Pentatlón por equipos</div><div class="text-xs text-slate-400 mb-2">Acumulado de puntos de las pruebas grupales/relevos registradas, agrupado por escuela.</div><div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-400 text-left"><th class="px-2 py-1">Puesto</th><th class="px-2 py-1">Escuela / equipo</th><th class="px-2 py-1 text-right">Puntos totales</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderDashboard(){
@@ -331,47 +556,20 @@ function renderDashboard(){
  const countEl=$('results-count'); if(countEl) countEl.textContent=`${results.length} resultado${results.length===1?'':'s'} registrado${results.length===1?'':'s'}`;
  const standings=Object.fromEntries(Object.keys(ESCUELAS).map(k=>[k,{...ESCUELAS[k],gold:0,silver:0,bronze:0,points:0}]));
  const seenTennisGroups=new Set();
- const medalCountedResultIds=new Set();
  results.forEach(r=>{
-   const storedMedals=Array.isArray(r.medallas)?r.medallas:[];
-   // Tenis: contabilizar el podio una sola vez por categoría/modalidad, incluso
-   // cuando una versión previa haya guardado las mismas medallas en varios partidos.
+     // Protección de lectura para resultados históricos de Pentatlón: una medalla por puesto y rama
+     // dentro de cada resultado, aunque un documento antiguo contenga filas duplicadas de bronce.
+     const sourceMedals=Array.isArray(r.medallas)?r.medallas:[];
+     const normalizedMedals=discipline(r)==='Pentatlón'?sourceMedals.filter((m,i,arr)=>{
+       const rank=Number(m.posicion)||({ORO:1,PLATA:2,BRONCE:3}[String(m.tipo||m.tipoMedalla||'').toUpperCase()]||0);
+       const rama=String(m.sexo||'').trim().toUpperCase()||'SIN_RAMA';
+       return arr.findIndex(x=>{const xr=Number(x.posicion)||({ORO:1,PLATA:2,BRONCE:3}[String(x.tipo||x.tipoMedalla||'').toUpperCase()]||0);return xr===rank&&(String(x.sexo||'').trim().toUpperCase()||'SIN_RAMA')===rama;})===i;
+     }):sourceMedals;
+     const medalCount=(school,type)=>normalizedMedals.filter(m=>m.escuelaCodigo===school&&String(m.tipo||m.tipoMedalla||'').toUpperCase()===type).length;
+     Object.keys(standings).forEach(s=>{standings[s].gold+=medalCount(s,'ORO');standings[s].silver+=medalCount(s,'PLATA');standings[s].bronze+=medalCount(s,'BRONCE');});
    if(discipline(r)==='Tenis' && r.resultadoDeportivo?.tipo==='TENIS'){
      const key=tennisGroupKey(r);if(seenTennisGroups.has(key))return;seenTennisGroups.add(key);
-     const group=tennisGroupResults(r);
-     const savedPodiumResult=group.find(x=>Array.isArray(x.medallas)&&x.medallas.length);
-     if(savedPodiumResult){
-       Object.keys(standings).forEach(s=>{
-         standings[s].gold+=medalsForSchool(savedPodiumResult,s,'ORO');
-         standings[s].silver+=medalsForSchool(savedPodiumResult,s,'PLATA');
-         standings[s].bronze+=medalsForSchool(savedPodiumResult,s,'BRONCE');
-       });
-       medalCountedResultIds.add(String(savedPodiumResult.id||savedPodiumResult.competenciaId||savedPodiumResult.competenciaCodigo||key));
-       return;
-     }
-     const rank=tennisRanking(r);if(rank.length>=3){rank.slice(0,3).forEach((p,i)=>{const school=standings[p.escuelaCodigo];if(!school)return;school[['gold','silver','bronze'][i]]++;});}
-     return;
-   }
-   // En las demás disciplinas se respetan las medallas explícitamente guardadas.
-   Object.keys(standings).forEach(s=>{
-     standings[s].gold+=medalsForSchool(r,s,'ORO');
-     standings[s].silver+=medalsForSchool(r,s,'PLATA');
-     standings[s].bronze+=medalsForSchool(r,s,'BRONCE');
-   });
-   if(storedMedals.length) medalCountedResultIds.add(String(r.id||r.competenciaId||r.competenciaCodigo||''));
-
-   // Deportes individuales: cuando existe clasificación pero el registro no guardó
-   // el arreglo medallas, derivarlas del podio calculado. Esto sincroniza podios con
-   // la tabla general y las tarjetas sin volver a sumar medallas ya persistidas.
-   if(!storedMedals.length && resultadoFinalizado(r) && !COLECTIVOS.has(discipline(r))){
-     const rank=individualRanking(r);
-     if(rank.length>=1){
-       rank.slice(0,3).forEach((p,i)=>{
-         if(!p?.escuelaCodigo || i>2) return;
-         const school=standings[p.escuelaCodigo];if(!school)return;
-         school[['gold','silver','bronze'][i]]++;
-       });
-     }
+     const rank=tennisRanking(r);if(rank.length>=3){rank.slice(0,3).forEach((p,i)=>{const school=standings[p.escuelaCodigo];if(!school)return;const type=['ORO','PLATA','BRONCE'][i];school[['gold','silver','bronze'][i]]++;});}
    }
  });
  // Puntaje ponderado informativo: oro=1000, plata=100, bronce=1.
@@ -385,7 +583,7 @@ function renderDashboard(){
  const grid=$('disciplines-grid');if(grid){grid.innerHTML=Object.values(DISCIPLINAS).map(d=>{const rs=results.filter(r=>discipline(r)===d);const cats=collectiveCategories(results,d);if(COLECTIVOS.has(d)){
    return `<div class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-4"><div class="flex justify-between border-b border-slate-800 pb-2"><b>${esc(d)}</b><span class="text-xs text-slate-400">${rs.length} resultado(s)</span></div>${cats.length?cats.map(cat=>`<div class="mt-3"><div class="text-xs text-blue-300 font-semibold mb-2">${esc(cat)}</div>${collectiveTableHtml(d,rs,cat)}</div>`).join(''):'<div class="py-6 text-center text-slate-500 italic text-xs">Sin partidos registrados</div>'}</div>`;
  }
- return `<div class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-4"><div class="flex justify-between border-b border-slate-800 pb-2"><b>${esc(d)}</b><span class="text-xs text-slate-400">${rs.length} resultado(s)</span></div>${rs.length?rs.map(r=>`<div class="mt-3 bg-slate-800/70 rounded-xl p-3 text-xs"><div class="font-semibold text-blue-300">${esc(category(r))}</div><div class="mt-2 space-y-1">${individualPodiumHtml(r)}</div></div>`).join(''):'<div class="py-6 text-center text-slate-500 italic text-xs">Sin resultados</div>'}</div>`;
+ return `<div class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-4"><div class="flex justify-between border-b border-slate-800 pb-2"><b>${esc(d)}</b><span class="text-xs text-slate-400">${rs.length} resultado(s)</span></div>${d==='Pentatlón'?pentathlonOverallHtml(results)+pentathlonTeamOverallHtml(results):''}${rs.length?rs.map(r=>`<div class="mt-3 bg-slate-800/70 rounded-xl p-3 text-xs"><div class="font-semibold text-blue-300">${esc(discipline(r)==='Tenis' ? tennisPodiumTitle(r) : modalityAndCategory(r))}</div><div class="mt-2 space-y-1">${individualPodiumHtml(r)}</div></div>`).join(''):'<div class="py-6 text-center text-slate-500 italic text-xs">Sin resultados</div>'}</div>`;
  }).join('')}
  const filter=$('filter-sport');if(filter){const current=filter.value;filter.innerHTML='<option value="ALL">Todas las Disciplinas</option>'+Object.values(DISCIPLINAS).map(d=>`<option>${d}</option>`).join('');filter.value=Object.values(DISCIPLINAS).includes(current)?current:'ALL'}
  renderSportTable();renderHistory(results);
@@ -396,9 +594,63 @@ window.renderSportTable=function(){
  if(selected!=='ALL'&&COLECTIVOS.has(selected)){
    const cats=collectiveCategories(rs,selected);tbody.innerHTML=cats.map(cat=>{const rows=collectiveStats(rs,selected,cat);return `<tr><td colspan="6" class="p-4"><div class="font-bold text-blue-300 mb-2">${esc(cat)}</div><div class="overflow-x-auto">${collectiveTableHtml(selected,rs,cat)}</div></td></tr>`}).join('');return;
  }
- tbody.innerHTML=rs.map(r=>{const p=individualRanking(r);return `<tr class="hover:bg-slate-700/40"><td class="p-4 text-xs text-slate-400">${esc(dateOf(r))}</td><td class="p-4 font-bold">${esc(discipline(r))}</td><td class="p-4 text-xs">${esc(category(r))}</td>${[0,1,2].map(i=>{const x=p[i];return `<td class="p-4 text-center">${x?`<div class="font-bold">${esc(x.escuelaCodigo||'')}</div><div class="text-xs text-slate-300">${esc(x.nombre||x.participanteId||'')}</div>`:'<span class="text-slate-600">—</span>'}</td>`}).join('')}</tr>`}).join('');
+ tbody.innerHTML=rs.map(r=>{const p=individualRanking(r);return `<tr class="hover:bg-slate-700/40"><td class="p-4 text-xs text-slate-400">${esc(dateOf(r))}</td><td class="p-4 font-bold">${esc(discipline(r))}</td><td class="p-4 text-xs"><div class="font-semibold text-blue-200">${esc(modalityLabel(r)||'—')}</div><div class="text-slate-400">${esc(category(r)||'')}</div></td>${[0,1,2].map(i=>{const x=p[i];return `<td class="p-4 text-center">${x?`<div class="font-bold">${esc(x.escuelaCodigo||'')}</div><div class="text-xs text-slate-300">${esc(x.nombre||x.participanteId||'')}</div>`:'<span class="text-slate-600">—</span>'}</td>`}).join('')}</tr>`}).join('');
 };
-function renderHistory(results){const c=$('history-container');if(!c)return;if(!results.length){c.innerHTML='<div class="text-center py-8 text-slate-500">No hay registros históricos.</div>';return}c.innerHTML=results.slice().sort((a,b)=>dateOf(b).localeCompare(dateOf(a))).map(r=>{const collective=isCollective(r);let status;if(collective){status=matchWinner(r)?`Partido registrado · Ganador: ${esc(matchWinner(r))}`:'Partido registrado · Tabla acumulada en proceso'}else{const rank=individualRanking(r);if(rank.length){status=rank.slice(0,3).map((x,i)=>`${['🥇','🥈','🥉'][i]} ${esc(x.escuelaCodigo||'')}`).join(' · ')}else if(discipline(r)==='Esgrima'&&r.resultadoDeportivo?.tipo==='ESGRIMA_ELIMINACION_DIRECTA'){const st=fencingBracketStatus(r);status=st.complete?`🥇 ${esc(individualRanking(r)[0]?.escuelaCodigo||'')} · 🥈 ${esc(individualRanking(r)[1]?.escuelaCodigo||'')} · 🥉 ${esc(individualRanking(r)[2]?.escuelaCodigo||'')}`:`Eliminación directa · SF ${Number(st.sf1)+Number(st.sf2)}/2 · Final ${st.final?'completa':'pendiente'} · 3.º puesto ${st.third?'completo':'pendiente'}`}else status='Resultado registrado · Podio pendiente'}return `<div class="bg-slate-900/80 border border-slate-700 rounded-2xl p-4 flex flex-col md:flex-row justify-between gap-3"><div><span class="text-xs text-blue-400">${esc(dateOf(r))}</span><h4 class="font-bold">${esc(discipline(r))} <span class="text-xs text-slate-400">${esc(category(r))}</span></h4><div class="text-xs text-slate-500">${esc(r.competenciaCodigo||r.competenciaId||'')}</div></div><div class="text-xs">${status}</div></div>`}).join('')}
+function historyPlaceCard(item, place){
+  if(!item) return '';
+  const medal=['🥇','🥈','🥉','🏅'][Math.min(Math.max(Number(place)-1,0),3)];
+  const color=['border-amber-400/40 bg-amber-400/10','border-slate-300/30 bg-slate-300/5','border-orange-400/30 bg-orange-400/5','border-slate-700 bg-slate-800/50'][Math.min(Math.max(Number(place)-1,0),3)];
+  const placeName=['PRIMER PUESTO · ORO','SEGUNDO PUESTO · PLATA','TERCER PUESTO · BRONCE','CUARTO PUESTO'][Math.min(Math.max(Number(place)-1,0),3)];
+  const school=esc(item.escuelaCodigo||item.escuela||'Escuela sin dato');
+  const name=esc(item.nombre||item.participante||item.participanteId||item.equipoNombre||'');
+  const score=first(item,['total','puntosPrueba','puntos','marcaTiempo','tiempoFinal','tiempoDefinitivo','tiempoBruto','resultado','marca']);
+  return `<div class="rounded-xl border ${color} p-3 flex items-center gap-3 min-w-0"><div class="text-2xl shrink-0">${medal}</div><div class="min-w-0 flex-1"><div class="text-[10px] uppercase tracking-wider text-slate-400">${placeName}</div><div class="font-extrabold text-white text-base">${school}</div>${name?`<div class="text-xs text-slate-300 truncate">${name}</div>`:''}${score!==''?`<div class="text-xs text-blue-200 mt-1">Resultado: ${esc(score)}</div>`:''}</div></div>`;
+}
+function historyPodiumHtml(r){
+  if(isCollective(r)){
+    const teams=schoolCodesFromMatch(r),winner=matchWinner(r),a=teamScore(r,0),b=teamScore(r,1);
+    if(!winner||teams.length<2) return `<div class="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 text-sm text-amber-200">⏳ Partido registrado; falta confirmar el ganador o el marcador final.</div>`;
+    const loser=teams.find(x=>x!==winner);
+    const wi=teams.indexOf(winner),li=teams.indexOf(loser);
+    return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2"><div class="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3"><div class="text-[10px] uppercase tracking-wider text-amber-200">🏆 Ganador del partido</div><div class="text-lg font-extrabold text-white">${esc(winner)}</div><div class="text-xs text-slate-300">Marcador: ${wi===0?a:b} – ${li===0?a:b}</div></div><div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3"><div class="text-[10px] uppercase tracking-wider text-slate-400">Rival</div><div class="text-lg font-bold text-white">${esc(loser)}</div><div class="text-xs text-slate-300">${li===0?a:b} – ${wi===0?a:b}</div></div></div>`;
+  }
+  const rank=individualRanking(r);
+  if(!rank.length){
+    if(discipline(r)==='Esgrima'&&r.resultadoDeportivo?.tipo==='ESGRIMA_ELIMINACION_DIRECTA'){
+      const st=fencingBracketStatus(r);
+      return `<div class="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 text-sm text-amber-200">⏳ Eliminación directa · Semifinales ${Number(st.sf1)+Number(st.sf2)}/2 · Final ${st.final?'completa':'pendiente'} · Tercer puesto ${st.third?'completo':'pendiente'}.</div>`;
+    }
+    return `<div class="rounded-xl border border-slate-700 bg-slate-800/40 p-3 text-sm text-slate-400">Resultado registrado · Podio pendiente de completar.</div>`;
+  }
+  const sexKey=x=>String(first(x,['sexo','genero','rama'])||'').trim().toLocaleUpperCase('es');
+  const branches=new Map();
+  rank.forEach(x=>{const key=sexKey(x);if(!branches.has(key))branches.set(key,[]);branches.get(key).push(x)});
+  const separate=branches.size>1 && [...branches.keys()].some(k=>k);
+  const sections=[...branches.entries()].map(([branch,items])=>{
+    const podium=items.filter(x=>Number(x.posicion)>0).sort((a,b)=>Number(a.posicion)-Number(b.posicion)).slice(0,3);
+    const cards=podium.map(x=>historyPlaceCard(x,Number(x.posicion)||podium.indexOf(x)+1)).join('');
+    const label=separate?`<div class="text-xs uppercase tracking-wider text-blue-200 font-bold mb-2">${esc(branch||'Rama sin especificar')}</div>`:'';
+    return `${label}<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">${cards||'<div class="text-xs text-slate-400">Podio pendiente.</div>'}</div>`;
+  }).join('<div class="h-3"></div>');
+  return sections;
+}
+function renderHistory(results){
+  const c=$('history-container');if(!c)return;
+  if(!results.length){c.innerHTML='<div class="text-center py-8 text-slate-500">No hay registros históricos.</div>';return}
+  c.innerHTML=results.slice().sort((a,b)=>dateOf(b).localeCompare(dateOf(a))).map((r,i)=>{
+    const d=discipline(r),mod=modalityLabel(r)||'Modalidad sin especificar',cat=category(r),desc=first(r,['competenciaDescripcion','descripcionCompetencia','competenciaNombre','competenciaCodigo','competenciaId']);
+    const isFinal=isCollective(r)?Boolean(matchWinner(r)):individualRanking(r).length>0;
+    return `<article class="bg-slate-900/80 border border-slate-700 rounded-2xl p-4 md:p-5 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div class="min-w-0"><div class="flex flex-wrap items-center gap-2 mb-2"><span class="text-xs text-blue-300 font-semibold">${esc(dateOf(r))}</span><span class="rounded-full px-2 py-1 text-[10px] font-bold ${isFinal?'bg-emerald-500/15 text-emerald-300':'bg-amber-500/15 text-amber-200'}">${isFinal?'COMPETENCIA CON RESULTADO':'RESULTADO PENDIENTE'}</span></div>
+          <h4 class="font-extrabold text-white text-lg">${esc(d)}</h4><div class="text-sm font-semibold text-blue-200 mt-0.5">${esc(mod)}</div>${cat?`<div class="text-xs text-slate-400 mt-1">Categoría / rama: ${esc(cat)}</div>`:''}${desc?`<div class="text-xs text-slate-500 mt-1">${esc(desc)}</div>`:''}
+        </div><div class="text-xs text-slate-500 shrink-0">Registro ${i+1}</div>
+      </div>
+      <div class="border-t border-slate-700/80 pt-3"><div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">${isCollective(r)?'Resultado del encuentro':'Podio de la competencia'}</div>${historyPodiumHtml(r)}</div>
+      <details class="group"><summary class="cursor-pointer select-none text-xs font-semibold text-blue-300 hover:text-blue-200">Ver detalle del registro <span class="inline-block transition-transform group-open:rotate-180">⌄</span></summary><div class="mt-3 rounded-lg bg-slate-950/50 p-3 text-xs text-slate-400 space-y-1"><div>Disciplina: ${esc(d)}</div><div>Modalidad / prueba: ${esc(mod)}</div>${cat?`<div>Categoría: ${esc(cat)}</div>`:''}<div>Fecha: ${esc(dateOf(r))}</div>${r.estado?`<div>Estado: ${esc(r.estado)}</div>`:''}</div></details>
+    </article>`;
+  }).join('');
+}
 
 function progDisciplina(o){
   // Fuente principal: código numérico de disciplina corregido en Firestore.
@@ -507,7 +759,13 @@ function exportRowsForCompetition(r){
     jornada:r.jornadaCodigo||'',
     escenario:r.escenarioCodigo||'',
     estado:r.estado||'',
+    estadoCompetencia:r.estadoCompetenciaNombre||r.estadoCompetencia||'',
+    tipoResultado:r.tipoResultado||'',
+    faseCompetencia:r.faseCompetencia||r.resultadoDeportivo?.faseCompetencia||r.resultadoDeportivo?.ronda||'',
+    defineMedalleria:r.defineMedalleria===true?'Sí':r.defineMedalleria===false?'No':'',
+    modalidadFinalizada:(r.modalidadFinalizada===true||r.resultadoDeportivo?.modalidadFinalizada===true)?'Sí':'No',
     responsable:r.registradoPorNombre||'Administrador no identificado',
+    registradoPor:r.registradoPor||'',
     registradoEn:r.registradoEn||r.creadoEn||'',
     actualizadoEn:r.actualizadoEn||'',
     observaciones:r.observaciones||''
@@ -517,40 +775,50 @@ function exportRowsForCompetition(r){
   const teams=schoolCodesFromMatch(r);
   if(isCollective(r)){
     const scoreA=teamScore(r,0),scoreB=teamScore(r,1);
-    rows.push({...base,detalle:'Partido',escuela:teams[0]||'',escuelaContraria:teams[1]||'',participante:'',resultado:scoreA!==null&&scoreB!==null?`${scoreA} - ${scoreB}`:(discipline(r)==='Voleibol'?((rd.sets||[]).map(s=>`${Number(s.local||0)}-${Number(s.visitante||0)}`).join(', ')||`${Number(rd.setsGanadosLocal||0)}-${Number(rd.setsGanadosVisitante||0)}`):''),posicion:'',puntos:(puntosDerivadosResultado(r).find(x=>x.escuelaCodigo===teams[0])?.puntos??''),ganador:matchWinner(r)||'',datosAdicionales:flattenValue(rd)});
+    rows.push({...base,detalle:'Partido',escuela:teams[0]||'',escuelaContraria:teams[1]||'',participante:'',resultado:scoreA!==null&&scoreB!==null?`${scoreA} - ${scoreB}`:'',posicion:'',puntos:(puntosDerivadosResultado(r).find(x=>x.escuelaCodigo===teams[0])?.puntos??''),ganador:matchWinner(r)||'',datosAdicionales:flattenValue(rd)});
     return rows;
+  }
+  // Taekwondo: exporta una fila por combate para que la auditoría refleje todos
+  // los combates guardados en el esquema MULTIPLES_COMBATES.
+  if(discipline(r)==='Taekwondo' && rd.tipo==='TAEKWONDO' && Array.isArray(rd.combates)){
+    rd.combates.forEach((bout,idx)=>{
+      const a=bout.competidorA||{}, b=bout.competidorB||{};
+      const winner=String(bout.ganador||'').toUpperCase();
+      const winnerName=winner==='A'?(a.nombre||a.escuelaCodigo||'') : winner==='B'?(b.nombre||b.escuelaCodigo||'') : (bout.resultadoFinal||'Pendiente');
+      const rounds=(bout.rounds||[]).map(q=>`R${q.round}: ${Number(q.puntosA||0)}-${Number(q.puntosB||0)} (Gam-jeom ${Number(q.gamJeomA||0)}-${Number(q.gamJeomB||0)})`).join(' | ');
+      rows.push({...base,detalle:`Combate ${bout.numero||idx+1}`,categoria:bout.categoriaPeso||base.categoria,modalidad:`Taekwondo ${bout.sexo||''}`.trim(),escuela:a.escuelaCodigo||'',escuelaContraria:b.escuelaCodigo||'',participante:`${a.nombre||'Competidor A'} vs ${b.nombre||'Competidor B'}`,resultado:rounds||bout.resultadoFinal||'',posicion:'',puntos:'',ganador:winnerName,datosAdicionales:flattenValue({numero:bout.numero,sexo:bout.sexo,categoriaPeso:bout.categoriaPeso,resultadoFinal:bout.resultadoFinal,formaFinalizacion:bout.formaFinalizacion,observaciones:bout.observaciones})});
+    });
+    if(rows.length) return rows;
   }
   // Tenis: el PDF debe mostrar el partido registrado aunque el cuadro/modalidad
   // todavía no esté marcado como finalizado. El ranking de tenis solo aparece
   // cuando se cierra la modalidad, pero cada partido ya tiene marcador propio.
   if(discipline(r)==='Tenis' && rd.tipo==='TENIS'){
     const a=rd.jugadorA||{}, b=rd.jugadorB||{};
+    const pairA=rd.parejaA||{}, pairB=rd.parejaB||{};
+    const doubles=['DOBLES','DOBLES MIXTOS'].includes(String(rd.modalidad||'').toUpperCase());
     const sets=Array.isArray(rd.sets)?rd.sets:[];
     const score=sets
       .filter(s=>s && (s.gamesA!==undefined && s.gamesA!==null && s.gamesB!==undefined && s.gamesB!==null) && (String(s.gamesA)!=='' || String(s.gamesB)!==''))
       .map(s=>`${Number(s.gamesA||0)}-${Number(s.gamesB||0)}`)
       .join(', ');
-    const setsWonA=sets.filter(s=>Number(s.gamesA||0)>Number(s.gamesB||0)).length;
-    const setsWonB=sets.filter(s=>Number(s.gamesB||0)>Number(s.gamesA||0)).length;
-    const winnerSide=String(rd.ganador||'').toUpperCase();
-    const winnerPlayer=winnerSide==='A'?a:winnerSide==='B'?b:null;
-    const loserPlayer=winnerSide==='A'?b:winnerSide==='B'?a:null;
-    const winner=winnerPlayer ? `Ganador: ${winnerPlayer.escuelaCodigo||''}${winnerPlayer.nombre?` · ${winnerPlayer.nombre}`:''}; Perdedor: ${loserPlayer.escuelaCodigo||''}${loserPlayer.nombre?` · ${loserPlayer.nombre}`:''}` : 'Ganador/Perdedor pendiente';
-    const fullScore=`${score||'Marcador pendiente'} (sets ganados ${setsWonA}-${setsWonB})`;
-    rows.push({...base,detalle:'Partido de tenis',escuela:a.escuelaCodigo||'',escuelaContraria:b.escuelaCodigo||'',participante:`${a.nombre||'Jugador A'} (${a.escuelaCodigo||'—'}) vs ${b.nombre||'Jugador B'} (${b.escuelaCodigo||'—'})`,resultado:fullScore,posicion:'',puntos:'',ganador:winner,datosAdicionales:flattenValue({modalidad:rd.modalidad||r.modalidadCodigo||'',sets,setsGanados:{jugadorA:setsWonA,jugadorB:setsWonB},estadisticas:rd.estadisticas||{}})});
+    const winnerSide=String(rd.ganadorLado||rd.ganador||'').toUpperCase();
+    const winner=doubles ? (rd.escuelaGanadora||((winnerSide==='A')?pairA.escuelaCodigo:(winnerSide==='B')?pairB.escuelaCodigo:'Pendiente'))
+      : winnerSide==='A' ? `${a.escuelaCodigo||''}${a.nombre?` · ${a.nombre}`:''}`
+      : winnerSide==='B' ? `${b.escuelaCodigo||''}${b.nombre?` · ${b.nombre}`:''}`
+      : (rd.ganador||'Pendiente');
+    const participantLabel=doubles ? `${pairA.escuelaCodigo||'Escuela A'} vs ${pairB.escuelaCodigo||'Escuela B'}` : `${a.nombre||'Jugador A'} vs ${b.nombre||'Jugador B'}`;
+    const stats=rd.estadisticas||{};
+    const statsText=`Aces A/B: ${Number(stats.acesA||0)}/${Number(stats.acesB||0)} · Dobles faltas A/B: ${Number(stats.dobleFaltaA||0)}/${Number(stats.dobleFaltaB||0)}`;
+    rows.push({...base,detalle:'Partido de tenis',categoria:r.categoriaCodigo||category(r),modalidad:rd.modalidad||r.modalidadCodigo||'',escuela:pairA.escuelaCodigo||a.escuelaCodigo||'',escuelaContraria:pairB.escuelaCodigo||b.escuelaCodigo||'',participante:participantLabel,resultado:`${score||flattenValue(rd.marcador||rd.resultado||'')} · ${statsText}`,posicion:'',puntos:'',ganador:winner,datosAdicionales:flattenValue({modalidad:rd.modalidad||r.modalidadCodigo||'',ronda:rd.ronda||rd.faseCompetencia||'',sets,setsGanadosA:rd.setsGanadosA,setsGanadosB:rd.setsGanadosB,ganadorLado:rd.ganadorLado,escuelaGanadora:rd.escuelaGanadora,parejaA:pairA,parejaB:pairB,estadisticas:stats})});
     return rows;
   }
   const ranking=individualRanking(r);
   if(ranking.length){
     ranking.forEach(p=>{
       const pts=puntosDerivadosResultado(r).find(x=>x.escuelaCodigo===p.escuelaCodigo && Number(x.posicion||0)===Number(p.posicion||0));
-      rows.push({...base,detalle:'Clasificación',escuela:p.escuelaCodigo||'',escuelaContraria:'',participante:p.nombre||p.participanteId||'',resultado:p.resultado??p.tiempoDefinitivo??p.tiempoFinal??p.marcaTiempo??p.total??p.puntosPrueba??'',posicion:p.posicion??'',puntos:pts?.puntos??'',ganador:Number(p.posicion)===1?'Sí':'',datosAdicionales:flattenValue(p)});
+      rows.push({...base,detalle:'Clasificación',escuela:p.escuelaCodigo||'',escuelaContraria:'',participante:p.nombre||p.participanteId||'',resultado:p.resultado??p.total??'',posicion:p.posicion??'',puntos:pts?.puntos??'',ganador:Number(p.posicion)===1?'Sí':'',datosAdicionales:flattenValue(p)});
     });
-  }
-  if(!rows.length && discipline(r)==='Esgrima' && rd.tipo==='ESGRIMA_ELIMINACION_DIRECTA'){
-    const ps=Array.isArray(rd.participantes)?rd.participantes:[]; const byId=Object.fromEntries(ps.map(p=>[p.id,p]));
-    const bouts=[['Semifinal 1',rd.cuadro?.semifinal1],['Semifinal 2',rd.cuadro?.semifinal2],['Final',rd.cuadro?.final],['Tercer puesto',rd.cuadro?.tercerPuesto]];
-    for(const [label,b] of bouts){if(!b)continue;const a=byId[b.participanteA]||{},bb=byId[b.participanteB]||{},w=byId[b.ganador]||{};const ta=(b.periodos||[]).reduce((n,x)=>n+Number(x.toquesA||0),0),tb=(b.periodos||[]).reduce((n,x)=>n+Number(x.toquesB||0),0);rows.push({...base,detalle:label,escuela:a.escuelaCodigo||'',escuelaContraria:bb.escuelaCodigo||'',participante:`${a.nombre||b.participanteA||'—'} vs ${bb.nombre||b.participanteB||'—'}`,resultado:`Toques ${ta}-${tb}`,posicion:'',puntos:'',ganador:w.nombre?`${w.escuelaCodigo||''} · ${w.nombre}`:(b.ganador||''),datosAdicionales:flattenValue(b)});}
   }
   if(!rows.length){
     rows.push({...base,detalle:'Resultado registrado',escuela:'',escuelaContraria:'',participante:'',resultado:'',posicion:'',puntos:'',ganador:'',datosAdicionales:flattenValue(rd)});
@@ -558,7 +826,7 @@ function exportRowsForCompetition(r){
   return rows;
 }
 const EXPORT_HEADERS=[
-  ['competencia','Competencia'],['competenciaId','ID competencia'],['disciplina','Disciplina'],['categoria','Categoría'],['modalidad','Modalidad'],['fecha','Fecha'],['hora','Hora'],['jornada','Jornada'],['escenario','Escenario'],['estado','Estado'],['detalle','Detalle'],['escuela','Escuela'],['escuelaContraria','Escuela contraria'],['participante','Participante / equipo'],['resultado','Resultado'],['posicion','Posición'],['puntos','Puntos'],['ganador','Ganador'],['responsable','Resultados cargados por'],['registradoEn','Registrado en'],['actualizadoEn','Actualizado en'],['observaciones','Observaciones'],['datosAdicionales','Datos deportivos']
+  ['competencia','Competencia'],['competenciaId','ID competencia'],['disciplina','Disciplina'],['categoria','Categoría'],['modalidad','Modalidad'],['fecha','Fecha'],['hora','Hora'],['jornada','Jornada'],['escenario','Escenario'],['estado','Estado'],['estadoCompetencia','Estado de competencia'],['tipoResultado','Tipo de resultado'],['faseCompetencia','Fase / ronda'],['defineMedalleria','Define medallería'],['modalidadFinalizada','Modalidad finalizada'],['detalle','Detalle'],['escuela','Escuela'],['escuelaContraria','Escuela contraria'],['participante','Participante / equipo'],['resultado','Resultado'],['posicion','Posición'],['puntos','Puntos'],['ganador','Ganador'],['responsable','Resultados cargados por'],['registradoEn','Registrado en'],['actualizadoEn','Actualizado en'],['observaciones','Observaciones'],['datosAdicionales','Datos deportivos']
 ];
 function csvEscape(v){return `"${String(v??'').replace(/"/g,'""')}"`;}
 function rowsToCsv(rows){return '\ufeff'+EXPORT_HEADERS.map(([,label])=>csvEscape(label)).join(',')+'\n'+rows.map(row=>EXPORT_HEADERS.map(([key])=>csvEscape(row[key])).join(',')).join('\n');}
@@ -581,27 +849,17 @@ async function resolveRowsUploader(rows,r){
   const name=await getAdminDisplayName(r);
   return rows.map(x=>({...x,responsable:name}));
 }
-let exportCompetitionRenderToken=0;
-function populateExportCompetitionOptions(){
-  const select=$('export-competition'); if(!select)return;
-  const rs=resultsWithCompetitions(); const current=select.value;
-  select.innerHTML=rs.length?'<option value="">Seleccione una competencia</option>'+rs.map(r=>`<option value="${esc(resultCompetitionKey(r))}">${esc(resultCompetitionLabel(r))}</option>`).join(''):'<option value="">No hay resultados registrados</option>';
-  if(rs.some(r=>resultCompetitionKey(r)===current)) select.value=current;
-  else if(rs.length) select.value=resultCompetitionKey(rs[0]);
-}
 async function renderExportCompetition(){
-  const renderToken=++exportCompetitionRenderToken;
-  const select=$('export-competition'), summary=$('export-competition-summary'), preview=$('export-results-preview');
+  const select=$('export-competition'); const summary=$('export-competition-summary'); const preview=$('export-results-preview');
   if(!select||!summary||!preview)return;
   const rs=resultsWithCompetitions();
   if(!rs.length){select.innerHTML='<option value="">No hay resultados registrados</option>';summary.textContent='Aún no existen resultados registrados para descargar.';preview.innerHTML='<div class="p-8 text-center text-slate-500">Sin resultados.</div>';return;}
-  // Nunca reconstruir el selector durante un cambio: eso ocasionaba que el resumen
-  // y la descarga terminaran usando otra competencia tras una operación asíncrona.
-  const key=select.value; const r=rs.find(x=>resultCompetitionKey(x)===key);
-  if(!r){summary.textContent='Seleccione una competencia con resultados.';preview.innerHTML='<div class="p-8 text-center text-slate-500">Seleccione una competencia.</div>';return;}
+  const current=select.value;
+  select.innerHTML='<option value="">Seleccione una competencia</option>'+rs.map(r=>`<option value="${esc(resultCompetitionKey(r))}">${esc(resultCompetitionLabel(r))}</option>`).join('');
+  if(rs.some(r=>resultCompetitionKey(r)===current))select.value=current;else select.value=resultCompetitionKey(rs[0]);
+  const r=rs.find(x=>resultCompetitionKey(x)===select.value)||rs[0];
   const rows=await resolveRowsUploader(exportRowsForCompetition(r),r);
   const uploaderName=await getAdminDisplayName(r);
-  if(renderToken!==exportCompetitionRenderToken || select.value!==key) return;
   summary.innerHTML=`<strong>${esc(resultCompetitionLabel(r))}</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-sm"><div><span class="text-slate-400">Disciplina:</span> ${esc(discipline(r))}</div><div><span class="text-slate-400">Fecha:</span> ${esc(r.fecha||dateOf(r))}</div><div><span class="text-slate-400">Resultados cargados por:</span> ${esc(uploaderName)}</div><div><span class="text-slate-400">Filas:</span> ${rows.length}</div></div>`;
   preview.innerHTML=`<table class="w-full text-xs"><thead><tr class="bg-slate-900/80 text-slate-400">${['Escuela','Escuela contraria','Participante / equipo','Resultado','Posición','Puntos','Ganador','Resultados cargados por'].map(h=>`<th class="p-3 text-left whitespace-nowrap">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(x=>`<tr class="border-t border-slate-700"><td class="p-3">${esc(x.escuela)}</td><td class="p-3">${esc(x.escuelaContraria)}</td><td class="p-3">${esc(x.participante)}</td><td class="p-3">${esc(x.resultado)}</td><td class="p-3">${esc(x.posicion)}</td><td class="p-3">${esc(x.puntos)}</td><td class="p-3">${esc(x.ganador)}</td><td class="p-3">${esc(x.responsable)}</td></tr>`).join('')}</tbody></table>`;
 }
@@ -723,24 +981,17 @@ function resultsWithJornadas(){
   });
   return [...map.values()].sort((a,b)=>a.key.localeCompare(b.key,undefined,{numeric:true,sensitivity:'base'}));
 }
-let exportJornadaRenderToken=0;
-function populateExportJornadaOptions(){
-  const select=$('export-jornada'); if(!select)return;
-  const js=resultsWithJornadas(); const current=select.value;
-  select.innerHTML=js.length?'<option value="">Seleccione una jornada</option>'+js.map(j=>`<option value="${esc(j.key)}">${esc(j.label)} · ${j.results.length} competencia(s)</option>`).join(''):'<option value="">No hay jornadas con resultados</option>';
-  if(js.some(j=>j.key===current))select.value=current; else if(js.length)select.value=js[0].key;
-}
 async function renderExportJornada(){
-  const renderToken=++exportJornadaRenderToken;
   const select=$('export-jornada'),summary=$('export-jornada-summary'),preview=$('export-jornada-preview');
   if(!select||!summary||!preview)return;
   const js=resultsWithJornadas();
   if(!js.length){select.innerHTML='<option value="">No hay jornadas con resultados</option>';summary.textContent='Aún no existen resultados registrados para descargar por jornada.';preview.innerHTML='<div class="p-8 text-center text-slate-500">Sin resultados por jornada.</div>';return;}
-  const key=select.value; const j=js.find(x=>x.key===key);
-  if(!j){summary.textContent='Seleccione una jornada con resultados.';preview.innerHTML='<div class="p-8 text-center text-slate-500">Seleccione una jornada.</div>';return;}
+  const current=select.value;
+  select.innerHTML='<option value="">Seleccione una jornada</option>'+js.map(j=>`<option value="${esc(j.key)}">${esc(j.label)} · ${j.results.length} competencia(s)</option>`).join('');
+  if(js.some(j=>j.key===current))select.value=current;else select.value=js[0].key;
+  const j=js.find(x=>x.key===select.value)||js[0];
   const rows=[];
   for(const r of j.results){const rr=await resolveRowsUploader(exportRowsForCompetition(r),r);rr.forEach(x=>rows.push({...x,competenciaLabel:resultCompetitionLabel(r)}));}
-  if(renderToken!==exportJornadaRenderToken || select.value!==key) return;
   summary.innerHTML=`<strong>${esc(j.label)}</strong><div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 text-sm"><div><span class="text-slate-400">Competencias con resultados:</span> ${j.results.length}</div><div><span class="text-slate-400">Filas de resultados:</span> ${rows.length}</div><div><span class="text-slate-400">Jornada:</span> ${esc(j.label)}</div></div>`;
   preview.innerHTML=`<table class="w-full text-xs"><thead><tr class="bg-slate-900/80 text-slate-400">${['Competencia','Disciplina','Escuela','Participante / equipo','Resultado','Posición','Puntos','Ganador','Resultados cargados por'].map(h=>`<th class="p-3 text-left whitespace-nowrap">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(x=>`<tr class="border-t border-slate-700"><td class="p-3">${esc(x.competenciaLabel)}</td><td class="p-3">${esc(x.disciplina)}</td><td class="p-3">${esc(x.escuela)}</td><td class="p-3">${esc(x.participante)}</td><td class="p-3">${esc(x.resultado)}</td><td class="p-3">${esc(x.posicion)}</td><td class="p-3">${esc(x.puntos)}</td><td class="p-3">${esc(x.ganador)}</td><td class="p-3">${esc(x.responsable)}</td></tr>`).join('')}</tbody></table>`;
 }
@@ -761,16 +1012,14 @@ async function downloadJornadaPdf(j){
 }
 window.openResultsExportModal=function(){
   $('results-export-modal')?.classList.remove('hidden');
-  populateExportCompetitionOptions(); populateExportJornadaOptions();
+  renderExportCompetition();renderExportJornada();
   const select=$('export-competition');
-  if(select&&!select.dataset.bound){select.addEventListener('change',()=>{renderExportCompetition().catch(e=>{console.error(e);window.showAlert?.('Error de auditoría','No se pudo actualizar la competencia seleccionada.',true);});});select.dataset.bound='1';}
+  if(select&&!select.dataset.bound){select.addEventListener('change',renderExportCompetition);select.dataset.bound='1';}
   const jornada=$('export-jornada');
-  if(jornada&&!jornada.dataset.bound){jornada.addEventListener('change',()=>{renderExportJornada().catch(e=>{console.error(e);window.showAlert?.('Error de auditoría','No se pudo actualizar la jornada seleccionada.',true);});});jornada.dataset.bound='1';}
+  if(jornada&&!jornada.dataset.bound){jornada.addEventListener('change',renderExportJornada);jornada.dataset.bound='1';}
   const btn=$('download-competition-results-btn');
-  if(btn&&!btn.dataset.bound){btn.addEventListener('click',async()=>{try{const key=$('export-competition')?.value;const r=resultsWithCompetitions().find(x=>resultCompetitionKey(x)===key);if(!r){window.showAlert?.('Seleccione una competencia','Debe seleccionar una competencia con resultados para descargar.',true);return;}await downloadCompetitionPdf(r,exportRowsForCompetition(r));}catch(e){console.error('Error al generar auditoría por competencia:',e);window.showAlert?.('No se pudo descargar el PDF',e?.message||'Verifique los recursos del PDF y vuelva a intentarlo.',true);}});btn.dataset.bound='1';}
+  if(btn&&!btn.dataset.bound){btn.addEventListener('click',async()=>{const r=resultsWithCompetitions().find(x=>resultCompetitionKey(x)===$('export-competition')?.value);if(!r){window.showAlert?.('Seleccione una competencia','Debe seleccionar una competencia con resultados para descargar.',true);return;}await downloadCompetitionPdf(r,exportRowsForCompetition(r));});btn.dataset.bound='1';}
   const jbtn=$('download-jornada-results-btn');
-  if(jbtn&&!jbtn.dataset.bound){jbtn.addEventListener('click',async()=>{try{const key=$('export-jornada')?.value;const j=resultsWithJornadas().find(x=>x.key===key);if(!j){window.showAlert?.('Seleccione una jornada','Debe seleccionar una jornada con resultados para descargar.',true);return;}await downloadJornadaPdf(j);}catch(e){console.error('Error al generar auditoría por jornada:',e);window.showAlert?.('No se pudo descargar el PDF',e?.message||'Verifique los recursos del PDF y vuelva a intentarlo.',true);}});jbtn.dataset.bound='1';}
-  renderExportCompetition().catch(e=>{console.error(e);window.showAlert?.('Error de auditoría','No se pudo cargar la competencia seleccionada.',true);});
-  renderExportJornada().catch(e=>{console.error(e);window.showAlert?.('Error de auditoría','No se pudo cargar la jornada seleccionada.',true);});
+  if(jbtn&&!jbtn.dataset.bound){jbtn.addEventListener('click',async()=>{const j=resultsWithJornadas().find(x=>x.key===$('export-jornada')?.value);if(!j){window.showAlert?.('Seleccione una jornada','Debe seleccionar una jornada con resultados para descargar.',true);return;}await downloadJornadaPdf(j);});jbtn.dataset.bound='1';}
 };
 window.addEventListener('resultadoFirebaseGuardado',()=>{renderExportCompetition();renderExportJornada();});

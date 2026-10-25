@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Juegos Interescuelas ENAP - Dashboard Oficial</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -13,6 +12,8 @@
         #results-export-modal.hidden { display: none !important; }
     </style>
     <link rel="stylesheet" href="css/app.css">
+    <!-- Tailwind compilado localmente (antes se cargaba desde cdn.tailwindcss.com, que falla en algunas redes). Va después de app.css para conservar el mismo orden de cascada que tenía el CDN. -->
+    <link rel="stylesheet" href="css/tailwind.css">
 
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">

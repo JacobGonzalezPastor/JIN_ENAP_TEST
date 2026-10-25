@@ -9,4 +9,26 @@ CAMBIOS 2026-10-18
 - Se conserva el orden estricto del medallero: oro, plata, bronce; el puntaje ponderado 1000/100/1 no determina el puesto.
 - Tenis: se robusteció la detección del cierre de modalidad/categoría; el podio se calcula al cerrar esa categoría/modalidad, sin esperar a que terminen las demás categorías de Tenis. Se añadió un mensaje que explica el cierre pendiente.
 
-Corrección: medallas de Atletismo derivadas en tabla general y tarjetas al cerrar modalidad.
+
+CAMBIOS 2026-10-19
+- Preservación de serverTimestamp: los marcadores se agregan tras la sanitización de datos.
+- Edición de documentos: no se sobrescribe creadoEn; se actualiza actualizadoEn.
+- Orientación Militar: se conserva idChip/id/participanteId en clasificación y medallas; fallback DORSAL-n.
+- modalidadFinalizada documentada como cierre de modalidad (control explícito de Tenis), no como indicador de competencia individual finalizada.
+- Pendiente: validar en navegador y en el proyecto Firebase real.
+
+
+CAMBIOS 2026-10-24 (unificación sobre backup3)
+- Baloncesto: marcador final único; puntos 2 (victoria) / 1 (derrota); corrección del bloque de puntos del ZIP original.
+- Fútbol: planilla en dos columnas y tarjetas amarillas/rojas por equipo.
+- Tiro Deportivo: múltiples planillas dinámicas (modalidad, arma, distancia, tiro rápido).
+- Taekwondo: planillas Poomsae Side-by-Side (combate sin cambios).
+- Natación: serie (1-4), grado en lugar de licencia, podio por mejor tiempo y por sexo, estados FINAL/DESCALIFICADO.
+- Atletismo: selector de formato (SS:MMM, MM:SS:MMM, MTS) y podio automático por tiempo/distancia.
+- No se modificaron los demás módulos. Detalle en docs/UNIFICACION_CAMBIOS_SOBRE_BACKUP3.md.
+- Verificación: node --check de app.js y resultados-form.js; pruebas funcionales de puntos, guardado y edición.
+
+CORRECCION 2026-10-25 (estilos fuera de la red ENAP)
+- index.html ya no carga https://cdn.tailwindcss.com (CDN de desarrollo, bloqueado/intermitente en algunas redes).
+- Se agrega css/tailwind.css (Tailwind 3.4.19 compilado, ~20 KB) enlazado después de css/app.css.
+- Al agregar clases Tailwind nuevas en index.html o js/*.js hay que volver a compilar css/tailwind.css.

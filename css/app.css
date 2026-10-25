@@ -208,3 +208,45 @@ body::before {
     .enap-logo-wrap { width: 58px; height: 72px; padding-left: 7px; }
     .enap-logo { width: 52px; height: 68px; }
 }
+
+
+/* Ajuste visual aislado del formulario de tenis: parejas, marcador y estadísticas */
+.tennis-form{display:flex;flex-direction:column;gap:16px;min-width:0}
+.tennis-form .tennis-top-grid{gap:14px}
+.tennis-form .tennis-summary{margin:0;line-height:1.55}
+.tennis-pair-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:stretch}
+.tennis-pair-card,.tennis-score-card{min-width:0;padding:16px;border:1px solid rgba(100,116,139,.35);border-radius:15px;background:rgba(15,23,42,.48)}
+.tennis-pair-heading{display:flex;align-items:center;gap:11px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(100,116,139,.25)}
+.tennis-pair-mark{display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.35);color:#bfdbfe;font-weight:900}
+.tennis-pair-b .tennis-pair-mark{background:rgba(16,185,129,.13);border-color:rgba(16,185,129,.3);color:#a7f3d0}
+.tennis-pair-heading h5,.tennis-section-heading h5{margin:0;color:#e2e8f0;font-size:14px;font-weight:800;text-transform:none;letter-spacing:0}
+.tennis-pair-heading p,.tennis-section-heading p{margin:3px 0 0;color:#94a3b8;font-size:12px;font-weight:500;text-transform:none;letter-spacing:0}
+.tennis-player-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.tennis-player-grid .form-field,.tennis-extra-player{min-width:0;width:100%}
+.tennis-extra-player.hidden{display:none}
+.tennis-extra-player:not(.hidden){display:block}
+.tennis-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:13px}
+.tennis-sets-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tennis-set-row{min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px;border:1px solid rgba(100,116,139,.24);border-radius:12px;background:rgba(2,6,23,.18)}
+.tennis-set-label{grid-column:1/-1;color:#bfdbfe;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.tennis-set-row .form-field{min-width:0}
+.tennis-winner-field{padding:14px;border:1px solid rgba(59,130,246,.3);border-radius:14px;background:rgba(30,64,175,.1)}
+.tennis-finalize-summary{margin:0}
+@media(max-width:760px){.tennis-pair-grid{grid-template-columns:1fr}.tennis-sets-grid{grid-template-columns:1fr}.tennis-section-heading{display:block}.tennis-section-heading p{margin-top:4px}}
+@media(max-width:480px){.tennis-pair-card,.tennis-score-card{padding:12px}.tennis-player-grid{grid-template-columns:1fr}.tennis-set-row{grid-template-columns:repeat(2,minmax(0,1fr))}.tennis-form .form-grid.two{grid-template-columns:1fr}}
+
+/* Fix statistics inputs in tennis form: visible, labeled controls for singles and doubles. */
+.tennis-stats-grid .form-field{display:flex;flex-direction:column;gap:8px;min-width:0;width:100%}
+.tennis-stats-grid .tennis-stat-label{display:block;color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.02em}
+.tennis-stats-grid .form-control{display:block;width:100%;min-height:42px;visibility:visible;opacity:1}
+
+/* Planilla de fútbol: agrupación visual por equipo */
+.football-layout { display:flex; flex-direction:column; gap:14px; }
+.football-team-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:stretch; }
+.football-team-panel { min-width:0; padding:14px; border:1px solid var(--border-color,rgba(148,163,184,.28)); border-radius:14px; background:rgba(15,23,42,.22); }
+.football-team-heading { margin:0 0 12px; padding-bottom:10px; font-size: .95rem; font-weight:700; text-transform:uppercase; letter-spacing:.035em; border-bottom:1px solid var(--border-color,rgba(148,163,184,.25)); }
+.football-local .football-team-heading { color:#93c5ff; }
+.football-visitor .football-team-heading { color:#8ee4d6; }
+.football-subheading { margin:13px 0 8px; padding-top:10px; border-top:1px solid var(--border-color,rgba(148,163,184,.2)); color:var(--text-muted,#94a3b8); font-size:.76rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.football-bottom-field { padding:12px 14px; border:1px solid var(--border-color,rgba(148,163,184,.28)); border-radius:12px; background:rgba(15,23,42,.18); }
+@media (max-width: 760px) { .football-team-grid { grid-template-columns:1fr; } }
